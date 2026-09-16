@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useAuth } from './AuthContext';
 import {
   fetchAllFromSupabase,
@@ -67,40 +67,94 @@ const IMPLANT_PIPELINE_STEPS = [
   { order: 7, name: 'Glaze', description: 'Glaze ve parlatma tamamlanır.', defaultTechnician: 'Yusuf Usta', estimatedHours: 2, isDefault: true }
 ];
 
+export function clonePipelineSteps(steps = []) {
+  return (steps || []).map((s, idx) => ({ ...s, order: s.order || idx + 1 }));
+}
+
+export function slugifyPipelineId(name, fallback = 'tip') {
+  const slug = String(name || '')
+    .toLowerCase()
+    .trim()
+    .replace(/ı/g, 'i')
+    .replace(/ğ/g, 'g')
+    .replace(/ü/g, 'u')
+    .replace(/ş/g, 's')
+    .replace(/ö/g, 'o')
+    .replace(/ç/g, 'c')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_|_$/g, '');
+  return slug || `${fallback}_${Date.now()}`;
+}
+
+export function stepNamesKey(steps = []) {
+  return (steps || []).map(s => normalizeStepName(s.name)).join('|');
+}
+
+export const DEFAULT_PIPELINE_TYPES = {
+  other: {
+    id: 'other',
+    name: 'Diğer',
+    locked: true,
+    steps: clonePipelineSteps(OTHER_PIPELINE_STEPS)
+  },
+  implant: {
+    id: 'implant',
+    name: 'İmplant',
+    locked: true,
+    steps: clonePipelineSteps(IMPLANT_PIPELINE_STEPS)
+  }
+};
+
 export const DEFAULT_MATERIALS = {
   mdp: {
     id: 'mdp',
     name: 'MDP (Metal Destekli Porselen)',
     badgeClass: 'badge-mat-mdp',
     color: '#d97706',
+    pipelineTypeId: 'other',
     description: 'Metal destekli porselen restorasyon üretimi.',
-    steps: OTHER_PIPELINE_STEPS.map(s => ({ ...s }))
+    steps: clonePipelineSteps(OTHER_PIPELINE_STEPS)
   },
   zirconia: {
     id: 'zirconia',
     name: 'Zirkonyum',
     badgeClass: 'badge-mat-zirconia',
     color: '#0284c7',
+    pipelineTypeId: 'other',
     description: 'Zirkonyum restorasyon üretimi.',
-    steps: OTHER_PIPELINE_STEPS.map(s => ({ ...s }))
+    steps: clonePipelineSteps(OTHER_PIPELINE_STEPS)
   },
   implant: {
     id: 'implant',
     name: 'İmplant',
     badgeClass: 'badge-mat-implant',
     color: '#059669',
+    pipelineTypeId: 'implant',
     description: 'İmplant üstü protez üretimi. Son etaptan MDP (metal destekli porselen) işine geçilebilir.',
-    steps: IMPLANT_PIPELINE_STEPS.map(s => ({ ...s }))
+    steps: clonePipelineSteps(IMPLANT_PIPELINE_STEPS)
   },
   lamina: {
     id: 'lamina',
     name: 'Lamina',
     badgeClass: 'badge-mat-lamina',
     color: '#7c3aed',
+    pipelineTypeId: 'other',
     description: 'Lamina restorasyon üretimi.',
-    steps: OTHER_PIPELINE_STEPS.map(s => ({ ...s }))
+    steps: clonePipelineSteps(OTHER_PIPELINE_STEPS)
   }
 };
+
+export function inferPipelineTypeId(mat) {
+  if (!mat) return 'other';
+  if (mat.pipelineTypeId) return mat.pipelineTypeId;
+  if (mat.id === 'implant' || mat.materialId === 'implant') return 'implant';
+  return 'other';
+}
+
+export function getMaterialPipelineType(mat, pipelineTypes = DEFAULT_PIPELINE_TYPES) {
+  const typeId = inferPipelineTypeId(mat);
+  return pipelineTypes[typeId] || pipelineTypes.other || DEFAULT_PIPELINE_TYPES.other;
+}
 
 const MATERIAL_ID_ALIASES = {
   emax: 'lamina',
@@ -151,11 +205,18 @@ function nextOrderId(orders) {
   return id;
 }
 
-export function migrateOrderToCurrentPipeline(order) {
+export function migrateOrderToCurrentPipeline(order, materialsMap = DEFAULT_MATERIALS) {
   if (!order) return order;
   const materialId = MATERIAL_ID_ALIASES[order.materialId] || order.materialId;
-  const template = DEFAULT_MATERIALS[materialId] || DEFAULT_MATERIALS.mdp;
-  const resolvedId = template.id;
+  const template = (materialsMap && materialsMap[materialId]) || DEFAULT_MATERIALS[materialId];
+  if (!template || !Array.isArray(template.steps) || template.steps.length === 0) {
+    return {
+      ...order,
+      materialId,
+      companyId: order.companyId != null ? String(order.companyId) : order.companyId
+    };
+  }
+  const resolvedId = template.id || materialId;
   const templateNames = template.steps.map(s => s.name);
   const currentNames = (order.steps || []).map(s => s.name);
   const alreadyMigrated =
@@ -207,9 +268,9 @@ export function migrateOrderToCurrentPipeline(order) {
   };
 }
 
-export function migrateOrdersToCurrentPipeline(orders) {
+export function migrateOrdersToCurrentPipeline(orders, materialsMap = DEFAULT_MATERIALS) {
   if (!Array.isArray(orders)) return [];
-  return orders.map(migrateOrderToCurrentPipeline);
+  return orders.map(o => migrateOrderToCurrentPipeline(o, materialsMap));
 }
 
 export const IMPLANT_COMPLETED_LABEL = 'İmplant tamamlandı';
@@ -259,13 +320,17 @@ export function sanitizeMaterials(mats) {
   if (!mats || typeof mats !== 'object') return mats;
   const cleaned = {};
   for (const [key, mat] of Object.entries(mats)) {
-    if (!mat) continue;
-    const isImplant = key === 'implant';
-    const defaultNames = isImplant ? DEFAULT_IMPLANT_STEP_NAMES : DEFAULT_OTHER_STEP_NAMES;
+    if (!mat || key === '__pipelineTypes') continue;
+    const pipelineTypeId = mat.pipelineTypeId
+      || (key === 'implant' ? 'implant' : (['mdp', 'zirconia', 'lamina'].includes(key) ? 'other' : undefined));
+    const isImplantType = pipelineTypeId === 'implant' || key === 'implant';
+    const defaultNames = isImplantType ? DEFAULT_IMPLANT_STEP_NAMES : DEFAULT_OTHER_STEP_NAMES;
     const isCoreMat = ['mdp', 'zirconia', 'implant', 'lamina'].includes(key);
 
     cleaned[key] = {
       ...mat,
+      id: mat.id || key,
+      pipelineTypeId,
       steps: (mat.steps || []).map(step => {
         let tech = (step.defaultTechnician || '').trim();
         if (!tech || /ayşe|ali|elif|murat|yaşar/i.test(tech) || tech.includes('Teknisyen')) {
@@ -288,6 +353,124 @@ export function sanitizeMaterials(mats) {
     };
   }
   return cleaned;
+}
+
+export function sanitizePipelineTypes(types) {
+  const merged = { ...DEFAULT_PIPELINE_TYPES };
+  if (!types || typeof types !== 'object') return merged;
+  Object.entries(types).forEach(([key, type]) => {
+    if (!type || key === '__pipelineTypes') return;
+    const id = type.id || key;
+    merged[id] = {
+      id,
+      name: type.name || id,
+      locked: id === 'other' || id === 'implant' ? true : Boolean(type.locked),
+      steps: clonePipelineSteps(type.steps && type.steps.length ? type.steps : (id === 'implant' ? IMPLANT_PIPELINE_STEPS : OTHER_PIPELINE_STEPS))
+    };
+  });
+  return merged;
+}
+
+export function hydratePipelineSystem(rawMaterials, storedTypes) {
+  const mats = sanitizeMaterials(rawMaterials);
+  const types = sanitizePipelineTypes(storedTypes);
+  const otherKey = stepNamesKey(types.other?.steps);
+  const implantKey = stepNamesKey(types.implant?.steps);
+
+  Object.values(mats).forEach(mat => {
+    if (mat.id === 'implant') {
+      mat.pipelineTypeId = 'implant';
+      mat.steps = clonePipelineSteps(types.implant.steps);
+      return;
+    }
+    if (['mdp', 'zirconia', 'lamina'].includes(mat.id)) {
+      mat.pipelineTypeId = 'other';
+      mat.steps = clonePipelineSteps(types.other.steps);
+      return;
+    }
+
+    const key = stepNamesKey(mat.steps);
+    const assigned = (mat.pipelineTypeId && types[mat.pipelineTypeId]) || null;
+    const assignedKey = assigned ? stepNamesKey(assigned.steps) : '';
+    const matchingType = key
+      ? Object.values(types).find(t => stepNamesKey(t.steps) === key)
+      : null;
+
+    if (matchingType && (!assigned || assigned.locked || assigned.id === matchingType.id)) {
+      mat.pipelineTypeId = matchingType.id;
+      mat.steps = clonePipelineSteps(matchingType.steps);
+      return;
+    }
+
+    if (assigned && key && key === assignedKey) {
+      mat.steps = clonePipelineSteps(assigned.steps);
+      return;
+    }
+
+    if (key && key !== otherKey && key !== implantKey && (!assigned || assigned.locked)) {
+      const typeId = `pt_${mat.id}`;
+      types[typeId] = {
+        id: typeId,
+        name: `${mat.name || mat.id} hattı`,
+        locked: false,
+        steps: clonePipelineSteps(mat.steps)
+      };
+      mat.pipelineTypeId = typeId;
+      return;
+    }
+
+    if (assigned) {
+      mat.pipelineTypeId = assigned.id;
+      mat.steps = clonePipelineSteps(assigned.steps);
+      return;
+    }
+
+    mat.pipelineTypeId = 'other';
+    mat.steps = clonePipelineSteps(types.other.steps);
+  });
+
+  return { materials: mats, pipelineTypes: types };
+}
+
+function splitMaterialsBlob(parsed) {
+  if (!parsed || typeof parsed !== 'object') return { mats: {}, types: null };
+  const { __pipelineTypes, ...mats } = parsed;
+  return { mats, types: __pipelineTypes || null };
+}
+
+function joinMaterialsBlob(mats, types) {
+  return { ...mats, __pipelineTypes: types };
+}
+
+function knownMaterialIds(materialsMap) {
+  const known = new Set(Object.keys(materialsMap || {}).filter(k => k && k !== '__pipelineTypes'));
+  ['mdp', 'zirconia', 'implant', 'lamina', 'porcelain', 'emax'].forEach(id => known.add(id));
+  return known;
+}
+
+function dropOrphanMaterialOrders(orders, materialsMap) {
+  const known = knownMaterialIds(materialsMap);
+  const kept = [];
+  const dropped = [];
+  (orders || []).forEach(o => {
+    if (o?.materialId && !known.has(o.materialId)) dropped.push(o);
+    else kept.push(o);
+  });
+  return { kept, dropped };
+}
+
+function loadStoredPipelineSystem() {
+  try {
+    const saved = localStorage.getItem(MATERIALS_STORAGE_KEY);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      const { mats, types } = splitMaterialsBlob(parsed);
+      if (mats && Object.keys(mats).length > 0) {
+        return hydratePipelineSystem({ ...DEFAULT_MATERIALS, ...mats }, types);
+      }
+    }
+  } catch (e) {}
+  return hydratePipelineSystem(DEFAULT_MATERIALS, DEFAULT_PIPELINE_TYPES);
 }
 
 export function sanitizeTechnicians(list) {
@@ -340,9 +523,11 @@ export const DentalProvider = ({ children }) => {
         const parsed = JSON.parse(saved);
         const isOldMock = parsed?.companies?.some(c => c.name?.includes('Dentİstanbul'));
         if (parsed && Array.isArray(parsed.orders) && !isOldMock) {
+          const storedMats = loadStoredPipelineSystem().materials;
+          const migrated = migrateOrdersToCurrentPipeline(parsed.orders, storedMats);
           return {
             ...parsed,
-            orders: migrateOrdersToCurrentPipeline(parsed.orders)
+            orders: dropOrphanMaterialOrders(migrated, storedMats).kept
           };
         }
       }
@@ -403,29 +588,31 @@ export const DentalProvider = ({ children }) => {
     } catch (e) {}
   }, [techniciansList]);
 
-  // Dinamik Restorasyon Materyalleri ve Üretim Hatları
-  const [materials, setMaterials] = useState(() => {
-    try {
-      const saved = localStorage.getItem(MATERIALS_STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) {
-          const sanitized = sanitizeMaterials({ ...DEFAULT_MATERIALS, ...parsed });
-          try {
-            localStorage.setItem(MATERIALS_STORAGE_KEY, JSON.stringify(sanitized));
-          } catch (e) {}
-          return sanitized;
-        }
-      }
-    } catch (e) {}
-    return sanitizeMaterials(DEFAULT_MATERIALS);
-  });
+  // Dinamik Restorasyon Materyalleri, Etap Tipleri ve Üretim Hatları
+  const [materials, setMaterials] = useState(() => loadStoredPipelineSystem().materials);
+  const [pipelineTypes, setPipelineTypes] = useState(() => loadStoredPipelineSystem().pipelineTypes);
+  const materialsRef = useRef(materials);
+  const pipelineTypesRef = useRef(pipelineTypes);
+  materialsRef.current = materials;
+  pipelineTypesRef.current = pipelineTypes;
 
   useEffect(() => {
     try {
-      localStorage.setItem(MATERIALS_STORAGE_KEY, JSON.stringify(materials));
+      localStorage.setItem(MATERIALS_STORAGE_KEY, JSON.stringify(joinMaterialsBlob(materials, pipelineTypes)));
     } catch (e) {}
-  }, [materials]);
+  }, [materials, pipelineTypes]);
+
+  const applyHydratedPipeline = (rawMats, rawTypes) => {
+    const hydrated = hydratePipelineSystem(
+      { ...DEFAULT_MATERIALS, ...materialsRef.current, ...(rawMats || {}) },
+      { ...pipelineTypesRef.current, ...(rawTypes || {}) }
+    );
+    setMaterials(hydrated.materials);
+    setPipelineTypes(hydrated.pipelineTypes);
+    materialsRef.current = hydrated.materials;
+    pipelineTypesRef.current = hydrated.pipelineTypes;
+    return hydrated.materials;
+  };
 
   // Veritabanına Otomatik Kaydetme
   const persistToDatabase = useCallback(async (dataToPersist) => {
@@ -457,13 +644,20 @@ export const DentalProvider = ({ children }) => {
       // 1. Supabase PostgreSQL Veritabanı
       const remote = await fetchAllFromSupabase();
       if (remote) {
-        const migratedRemote = migrateOrdersToCurrentPipeline(remote.orders || []);
+        let liveMats = materialsRef.current;
+        if (remote.customMaterials && typeof remote.customMaterials === 'object' && Object.keys(remote.customMaterials).length > 0) {
+          const { mats, types } = splitMaterialsBlob(remote.customMaterials);
+          liveMats = applyHydratedPipeline(mats, types);
+        }
+        const migratedRemote = migrateOrdersToCurrentPipeline(remote.orders || [], liveMats);
+        const { kept, dropped } = dropOrphanMaterialOrders(migratedRemote, liveMats);
+        dropped.forEach(o => deleteOrderFromSupabase(o.id));
         setData(prev => {
           const next = {
             companies: remote.companies || [],
             doctors: remote.doctors || [],
             patients: remote.patients || [],
-            orders: migratedRemote
+            orders: kept
           };
 
           // Eğer veri aynıysa gereksiz state güncellemesi yapma (flicker ve gereksiz re-render engellenir)
@@ -496,18 +690,6 @@ export const DentalProvider = ({ children }) => {
           });
         }
 
-        // Dinamik Materyalleri ve Etapları buluttan gelenle eşitle
-        if (remote.customMaterials && typeof remote.customMaterials === 'object' && Object.keys(remote.customMaterials).length > 0) {
-          setMaterials(prev => {
-            const sanitized = sanitizeMaterials({ ...DEFAULT_MATERIALS, ...remote.customMaterials });
-            if (JSON.stringify(prev) === JSON.stringify(sanitized)) return prev;
-            try {
-              localStorage.setItem(MATERIALS_STORAGE_KEY, JSON.stringify(sanitized));
-            } catch (e) {}
-            return sanitized;
-          });
-        }
-
         // Firma hesaplarını / kullanıcıları eşitle
         if (Array.isArray(remote.users) && remote.users.length > 0 && typeof applyRemoteUsers === 'function') {
           applyRemoteUsers(remote.users);
@@ -525,9 +707,12 @@ export const DentalProvider = ({ children }) => {
         if (result && result.data && Array.isArray(result.data.orders)) {
           const isMock = result.data.companies?.some(c => c.name?.includes('Dentİstanbul'));
           if (!isMock) {
+            const migratedOrders = migrateOrdersToCurrentPipeline(result.data.orders, materialsRef.current);
+            const { kept, dropped } = dropOrphanMaterialOrders(migratedOrders, materialsRef.current);
+            dropped.forEach(o => deleteOrderFromSupabase(o.id));
             const migrated = {
               ...result.data,
-              orders: migrateOrdersToCurrentPipeline(result.data.orders)
+              orders: kept
             };
             setData(migrated);
             localStorage.setItem(STORAGE_KEY, JSON.stringify(migrated));
@@ -579,6 +764,24 @@ export const DentalProvider = ({ children }) => {
     } catch (e) {}
     persistToDatabase(data);
   }, [data, persistToDatabase]);
+
+  const purgingOrphanIdsRef = useRef(new Set());
+  useEffect(() => {
+    const { dropped } = dropOrphanMaterialOrders(data.orders, materials);
+    const fresh = dropped.filter(o => o?.id && !purgingOrphanIdsRef.current.has(String(o.id)));
+    if (!fresh.length) return;
+    fresh.forEach(o => purgingOrphanIdsRef.current.add(String(o.id)));
+    const ids = new Set(fresh.map(o => String(o.id)));
+    setData(prev => ({
+      ...prev,
+      orders: (prev.orders || []).filter(o => !ids.has(String(o.id)))
+    }));
+    fresh.forEach(o => {
+      deleteOrderFromSupabase(o.id).finally(() => {
+        purgingOrphanIdsRef.current.delete(String(o.id));
+      });
+    });
+  }, [materials, data.orders]);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -668,7 +871,7 @@ export const DentalProvider = ({ children }) => {
       if (parsed.orders !== undefined && parsed.companies !== undefined) {
         const migrated = {
           ...parsed,
-          orders: migrateOrdersToCurrentPipeline(parsed.orders)
+          orders: migrateOrdersToCurrentPipeline(parsed.orders, materialsRef.current)
         };
         setData(migrated);
         persistToDatabase(migrated);
@@ -1401,6 +1604,31 @@ export const DentalProvider = ({ children }) => {
     showToast('Hasta silindi.', 'warning');
   };
 
+  const persistPipelineBlob = (nextMats, nextTypes) => {
+    saveMaterialsToSupabase(joinMaterialsBlob(nextMats, nextTypes));
+  };
+
+  const applyTypeStepsToMaterials = (mats, type) => {
+    const next = { ...mats };
+    Object.keys(next).forEach(id => {
+      if (inferPipelineTypeId(next[id]) === type.id) {
+        next[id] = { ...next[id], pipelineTypeId: type.id, steps: clonePipelineSteps(type.steps) };
+      }
+    });
+    return next;
+  };
+
+  const commitPipelineType = (nextType) => {
+    const nextTypes = { ...pipelineTypesRef.current, [nextType.id]: nextType };
+    const nextMats = applyTypeStepsToMaterials(materialsRef.current, nextType);
+    pipelineTypesRef.current = nextTypes;
+    materialsRef.current = nextMats;
+    setPipelineTypes(nextTypes);
+    setMaterials(nextMats);
+    persistPipelineBlob(nextMats, nextTypes);
+    return nextType;
+  };
+
   // --- DİNAMİK RESTORASYON MATERYALLERİ & ETAP YÖNETİMİ ---
   const saveCustomMaterial = async (matData) => {
     if (denyProductionChange()) return null;
@@ -1408,9 +1636,13 @@ export const DentalProvider = ({ children }) => {
       showToast('Materyal adı boş olamaz.', 'error');
       return null;
     }
-    const cleanId = (matData.id || matData.name.toLowerCase().trim().replace(/[^a-z0-9]/g, '_'));
-    if (['mdp', 'zirconia', 'implant', 'lamina'].includes(cleanId) && materials[cleanId]) {
-      showToast('Temel sistem materyalleri düzenlenemez.', 'warning');
+    const cleanId = (matData.id || slugifyPipelineId(matData.name, 'mat'));
+    const typeId = matData.pipelineTypeId || inferPipelineTypeId(matData) || 'other';
+    const typesMap = pipelineTypesRef.current || pipelineTypes;
+    const type = typesMap[typeId] || typesMap.other || DEFAULT_PIPELINE_TYPES.other;
+    const isCore = ['mdp', 'zirconia', 'implant', 'lamina'].includes(cleanId) && materialsRef.current[cleanId] && !matData.id;
+    if (isCore) {
+      showToast('Temel sistem materyalleri bu formdan yeniden oluşturulamaz.', 'warning');
       return null;
     }
     const updated = {
@@ -1418,125 +1650,146 @@ export const DentalProvider = ({ children }) => {
       name: matData.name.trim(),
       badgeClass: matData.badgeClass || `badge-mat-${cleanId}`,
       color: matData.color || '#0284c7',
+      pipelineTypeId: type.id,
       description: matData.description || `${matData.name.trim()} restorasyon üretimi.`,
-      steps: Array.isArray(matData.steps) && matData.steps.length > 0
-        ? matData.steps.map((s, idx) => ({ ...s, order: idx + 1 }))
-        : [
-            { order: 1, name: 'Onay', description: 'İş emri onayı beklenir.', defaultTechnician: 'Yusuf Usta', estimatedHours: 0 },
-            { order: 2, name: 'Ölçü + Model', description: 'Model hazırlanır.', defaultTechnician: 'Yusuf Usta', estimatedHours: 3 },
-            { order: 3, name: 'Üretim / İşleme', description: 'Restorasyon ana üretimi.', defaultTechnician: 'Yusuf Usta', estimatedHours: 4 },
-            { order: 4, name: 'Glaze / Bitiş', description: 'Polisaj ve son kontroller.', defaultTechnician: 'Yusuf Usta', estimatedHours: 2 }
-          ]
+      steps: clonePipelineSteps(
+        Array.isArray(matData.steps) && matData.steps.length > 0 ? matData.steps : type.steps
+      )
     };
 
-    setMaterials(prev => {
-      const next = { ...prev, [cleanId]: updated };
-      saveMaterialsToSupabase(next);
-      return next;
-    });
-    showToast(`"${updated.name}" materyali başarıyla kaydedildi ✓`, 'success');
+    const next = { ...materialsRef.current, [cleanId]: updated };
+    materialsRef.current = next;
+    setMaterials(next);
+    persistPipelineBlob(next, pipelineTypesRef.current);
+    showToast(`"${updated.name}" materyali "${type.name}" etap tipine bağlandı ✓`, 'success');
     return updated;
   };
 
-  const deleteCustomMaterial = async (matId) => {
+  const assignMaterialPipelineType = async (matId, typeId) => {
     if (denyProductionChange()) return false;
-    if (['mdp', 'zirconia', 'implant', 'lamina'].includes(matId)) {
-      showToast('Temel sistem materyalleri silinemez. Etaplarını düzenleyebilirsiniz.', 'warning');
-      return false;
-    }
-    const inUse = (data.orders || []).some(o => o.materialId === matId && o.status !== 'completed' && o.status !== 'rejected');
-    if (inUse) {
-      showToast('Bu materyali kullanan aktif siparişler var. Önce siparişleri tamamlayın veya silin.', 'error');
-      return false;
-    }
-
-    setMaterials(prev => {
-      const next = { ...prev };
-      delete next[matId];
-      saveMaterialsToSupabase(next);
-      return next;
-    });
-    showToast('Materyal silindi.', 'warning');
+    const mat = materialsRef.current[matId];
+    const type = pipelineTypesRef.current[typeId];
+    if (!mat || !type) return false;
+    const updated = { ...mat, pipelineTypeId: type.id, steps: clonePipelineSteps(type.steps) };
+    const next = { ...materialsRef.current, [matId]: updated };
+    materialsRef.current = next;
+    setMaterials(next);
+    persistPipelineBlob(next, pipelineTypesRef.current);
+    showToast(`"${mat.name}" artık "${type.name}" hattında.`, 'success');
     return true;
   };
 
-  const addStepToMaterial = async (matId, stepData) => {
+  const savePipelineType = async (typeData) => {
     if (denyProductionChange()) return null;
-    const mat = materials[matId];
-    if (!mat) return null;
-    const currentSteps = mat.steps || [];
+    const name = (typeData.name || '').trim();
+    if (!name) {
+      showToast('Etap tipi adı boş olamaz.', 'error');
+      return null;
+    }
+    const typesMap = pipelineTypesRef.current;
+    let id = typeData.id || slugifyPipelineId(name, 'etap');
+    if (!typeData.id && typesMap[id]) id = `${id}_${Date.now().toString().slice(-4)}`;
+    const existing = typesMap[id];
+    const isNew = !existing;
+    const sourceSteps = typeData.steps && typeData.steps.length
+      ? typeData.steps
+      : (existing?.steps || OTHER_PIPELINE_STEPS);
+    const nextType = {
+      id,
+      name,
+      locked: existing ? Boolean(existing.locked) : false,
+      steps: clonePipelineSteps(sourceSteps).map(s => ({
+        ...s,
+        isDefault: isNew ? false : Boolean(s.isDefault)
+      }))
+    };
+    commitPipelineType(nextType);
+    showToast(`"${nextType.name}" etap tipi kaydedildi.`, 'success');
+    return nextType;
+  };
+
+  const deletePipelineType = async (typeId) => {
+    if (denyProductionChange()) return false;
+    const type = pipelineTypesRef.current[typeId];
+    if (!type) return false;
+    if (type.locked || typeId === 'other' || typeId === 'implant') {
+      showToast('Varsayılan etap tipleri silinemez.', 'warning');
+      return false;
+    }
+    const used = Object.values(materialsRef.current).some(m => inferPipelineTypeId(m) === typeId);
+    if (used) {
+      showToast('Bu etap tipini kullanan materyaller var. Önce materyalleri başka tipe alın.', 'error');
+      return false;
+    }
+    const nextTypes = { ...pipelineTypesRef.current };
+    delete nextTypes[typeId];
+    pipelineTypesRef.current = nextTypes;
+    setPipelineTypes(nextTypes);
+    persistPipelineBlob(materialsRef.current, nextTypes);
+    showToast('Etap tipi silindi.', 'warning');
+    return true;
+  };
+
+  const isLockedPipelineType = (type) => Boolean(type && (type.locked || type.id === 'other' || type.id === 'implant'));
+
+  const addStepToPipelineType = async (typeId, stepData) => {
+    if (denyProductionChange()) return null;
+    const type = pipelineTypesRef.current[typeId];
+    if (!type) return null;
     const newStep = {
-      order: currentSteps.length + 1,
+      order: (type.steps || []).length + 1,
       name: stepData.name?.trim() || 'Yeni Etap',
-      description: stepData.description?.trim() || 'Özel laboratuvar aşaması açıklaması',
+      description: stepData.description?.trim() || 'Özel laboratuvar aşaması',
       defaultTechnician: 'Yusuf Usta',
       estimatedHours: parseFloat(stepData.estimatedHours) || 2,
       isDefault: false
     };
-    const nextSteps = [...currentSteps, newStep];
-    const updatedMat = { ...mat, steps: nextSteps };
-
-    setMaterials(prev => {
-      const next = { ...prev, [matId]: updatedMat };
-      saveMaterialsToSupabase(next);
-      return next;
-    });
-    showToast(`"${newStep.name}" etabı eklendi.`, 'success');
+    commitPipelineType({ ...type, steps: [...(type.steps || []), newStep] });
+    showToast(`"${newStep.name}" etabı "${type.name}" tipine eklendi.`, 'success');
     return newStep;
   };
 
-  const updateMaterialStep = async (matId, stepOrder, stepData) => {
+  const updatePipelineTypeStep = async (typeId, stepOrder, stepData) => {
     if (denyProductionChange()) return null;
-    const mat = materials[matId];
-    if (!mat) return null;
-    const target = (mat.steps || []).find(s => s.order === stepOrder);
-    if (target && target.isDefault) {
-      showToast('Temel sistem etapları düzenlenemez.', 'error');
+    const type = pipelineTypesRef.current[typeId];
+    if (!type) return null;
+    const target = (type.steps || []).find(s => s.order === stepOrder);
+    if (!target) return null;
+    if (isLockedPipelineType(type) && target.isDefault) {
+      showToast('Varsayılan etap tiplerindeki temel etaplar düzenlenemez.', 'error');
       return null;
     }
-    const nextSteps = (mat.steps || []).map(s => {
-      if (s.order === stepOrder) {
-        return {
-          ...s,
-          name: stepData.name !== undefined ? stepData.name.trim() : s.name,
-          description: stepData.description !== undefined ? stepData.description.trim() : s.description,
-          defaultTechnician: 'Yusuf Usta',
-          estimatedHours: stepData.estimatedHours !== undefined ? (parseFloat(stepData.estimatedHours) || 0) : s.estimatedHours,
-          isDefault: false
-        };
-      }
-      return s;
+    const nextSteps = (type.steps || []).map(s => {
+      if (s.order !== stepOrder) return s;
+      return {
+        ...s,
+        name: stepData.name !== undefined ? stepData.name.trim() : s.name,
+        description: stepData.description !== undefined ? stepData.description.trim() : s.description,
+        defaultTechnician: 'Yusuf Usta',
+        estimatedHours: stepData.estimatedHours !== undefined ? (parseFloat(stepData.estimatedHours) || 0) : s.estimatedHours,
+        isDefault: isLockedPipelineType(type) ? Boolean(s.isDefault) : false
+      };
     });
-    const updatedMat = { ...mat, steps: nextSteps };
-
-    setMaterials(prev => {
-      const next = { ...prev, [matId]: updatedMat };
-      saveMaterialsToSupabase(next);
-      return next;
-    });
+    commitPipelineType({ ...type, steps: nextSteps });
     showToast('Etap güncellendi.', 'success');
-    return updatedMat;
+    return true;
   };
 
-  const removeStepFromMaterial = async (matId, stepOrder, orderIdsToDelete = []) => {
+  const removeStepFromPipelineType = async (typeId, stepOrder, orderIdsToDelete = []) => {
     if (denyProductionChange()) return false;
-    const mat = materials[matId];
-    if (!mat) return false;
-    const stepToDelete = (mat.steps || []).find(s => s.order === stepOrder);
+    const type = pipelineTypesRef.current[typeId];
+    if (!type) return false;
+    const stepToDelete = (type.steps || []).find(s => s.order === stepOrder);
     if (!stepToDelete) return false;
-
-    // Temel sistem etapları asla silinemez
-    if (stepToDelete.isDefault) {
-      showToast('Temel sistem etapları silinemez.', 'error');
+    if (isLockedPipelineType(type) && stepToDelete.isDefault) {
+      showToast('Varsayılan etap tiplerindeki temel etaplar silinemez.', 'error');
+      return false;
+    }
+    if ((type.steps || []).length <= 1) {
+      showToast('Bir etap tipinde en az 1 üretim etabı bulunmalıdır.', 'warning');
       return false;
     }
 
-    if ((mat.steps || []).length <= 1) {
-      showToast('Bir materyalde en az 1 üretim etabı bulunmalıdır.', 'warning');
-      return false;
-    }
-
-    // 1. Bu etapta yer alan ve silinmesi onaylanan iş emirlerini kalıcı olarak sil
     if (Array.isArray(orderIdsToDelete) && orderIdsToDelete.length > 0) {
       const idsSet = new Set(orderIdsToDelete.map(id => String(id)));
       setData(prev => ({
@@ -1548,74 +1801,115 @@ export const DentalProvider = ({ children }) => {
       }
     }
 
-    // 2. Kalan iş emirlerinde (bu adımı içerenlerde) adımları normalize et
+    const typeMatIds = new Set(
+      Object.values(materialsRef.current)
+        .filter(m => inferPipelineTypeId(m) === typeId)
+        .map(m => m.id)
+    );
+
     setData(prev => {
       let ordersChanged = false;
       const updatedOrders = (prev.orders || []).map(o => {
+        if (typeMatIds.size && !typeMatIds.has(o.materialId)) return o;
         const oldSteps = o.steps || [];
         const hasStep = oldSteps.some(s => s.name === stepToDelete.name);
         if (!hasStep) return o;
-
         ordersChanged = true;
         const filteredSteps = oldSteps
           .filter(s => s.name !== stepToDelete.name)
           .map((s, idx) => ({ ...s, order: idx + 1 }));
         const maxIdx = Math.max(0, filteredSteps.length - 1);
-        const newIdx = Math.min(o.currentStepIndex || 0, maxIdx);
         return {
           ...o,
           steps: filteredSteps,
-          currentStepIndex: newIdx
+          currentStepIndex: Math.min(o.currentStepIndex || 0, maxIdx)
         };
       });
       return ordersChanged ? { ...prev, orders: updatedOrders } : prev;
     });
 
-    // 3. Etabı materyalden çıkar
-    const nextSteps = (mat.steps || [])
+    const nextSteps = (type.steps || [])
       .filter(s => s.order !== stepOrder)
       .map((s, idx) => ({ ...s, order: idx + 1 }));
-    const updatedMat = { ...mat, steps: nextSteps };
-
-    setMaterials(prev => {
-      const next = { ...prev, [matId]: updatedMat };
-      saveMaterialsToSupabase(next);
-      return next;
-    });
+    commitPipelineType({ ...type, steps: nextSteps });
 
     const deletedCount = (orderIdsToDelete || []).length;
     if (deletedCount > 0) {
-      showToast(`"${stepToDelete.name}" etabı ve içerisindeki ${deletedCount} iş emri başarıyla silindi.`, 'warning');
+      showToast(`"${stepToDelete.name}" etabı ve içerisindeki ${deletedCount} iş emri silindi.`, 'warning');
     } else {
-      showToast(`"${stepToDelete.name}" etabı silindi.`, 'warning');
+      showToast(`"${stepToDelete.name}" etabı "${type.name}" tipinden silindi.`, 'warning');
     }
     return true;
   };
 
-  const reorderMaterialSteps = async (matId, newSteps) => {
+  const reorderPipelineTypeSteps = async (typeId, newSteps) => {
     if (denyProductionChange()) return false;
-    const mat = materials[matId];
-    if (!mat) return false;
-    const normalized = newSteps.map((s, idx) => ({ ...s, order: idx + 1 }));
-    const updatedMat = { ...mat, steps: normalized };
-
-    setMaterials(prev => {
-      const next = { ...prev, [matId]: updatedMat };
-      saveMaterialsToSupabase(next);
-      return next;
-    });
+    const type = pipelineTypesRef.current[typeId];
+    if (!type) return false;
+    const normalized = (newSteps || []).map((s, idx) => ({ ...s, order: idx + 1 }));
+    commitPipelineType({ ...type, steps: normalized });
     showToast('Etap sıralaması güncellendi.', 'success');
+    return true;
+  };
+
+  const deleteOrdersForMaterial = (matId) => {
+    const related = (data.orders || []).filter(o => o.materialId === matId);
+    if (!related.length) return 0;
+    const ids = new Set(related.map(o => String(o.id)));
+    setData(prev => ({
+      ...prev,
+      orders: (prev.orders || []).filter(o => !ids.has(String(o.id)))
+    }));
+    related.forEach(o => deleteOrderFromSupabase(o.id));
+    return related.length;
+  };
+
+  const deleteCustomMaterial = async (matId) => {
+    if (denyProductionChange()) return false;
+    if (['mdp', 'zirconia', 'implant', 'lamina'].includes(matId)) {
+      showToast('Temel sistem materyalleri silinemez.', 'warning');
+      return false;
+    }
+    const mat = materialsRef.current[matId];
+    const typeId = inferPipelineTypeId(mat || { id: matId });
+    const removedOrders = deleteOrdersForMaterial(matId);
+
+    const nextMats = { ...materialsRef.current };
+    delete nextMats[matId];
+    materialsRef.current = nextMats;
+    setMaterials(nextMats);
+
+    let nextTypes = pipelineTypesRef.current;
+    if (typeId && typeId !== 'other' && typeId !== 'implant' && nextTypes[typeId] && !nextTypes[typeId].locked) {
+      const stillUsed = Object.values(nextMats).some(m => inferPipelineTypeId(m) === typeId);
+      if (!stillUsed) {
+        nextTypes = { ...nextTypes };
+        delete nextTypes[typeId];
+        pipelineTypesRef.current = nextTypes;
+        setPipelineTypes(nextTypes);
+      }
+    }
+    persistPipelineBlob(nextMats, nextTypes);
+
+    if (removedOrders > 0) {
+      showToast(`Materyal ve ona bağlı ${removedOrders} iş emri silindi.`, 'warning');
+    } else {
+      showToast('Materyal silindi.', 'warning');
+    }
     return true;
   };
 
   const resetMaterialsToDefault = async () => {
     if (denyProductionChange()) return false;
+    materialsRef.current = DEFAULT_MATERIALS;
+    pipelineTypesRef.current = DEFAULT_PIPELINE_TYPES;
     setMaterials(DEFAULT_MATERIALS);
+    setPipelineTypes(DEFAULT_PIPELINE_TYPES);
     try {
-      localStorage.setItem(MATERIALS_STORAGE_KEY, JSON.stringify(DEFAULT_MATERIALS));
+      localStorage.setItem(MATERIALS_STORAGE_KEY, JSON.stringify(joinMaterialsBlob(DEFAULT_MATERIALS, DEFAULT_PIPELINE_TYPES)));
     } catch (e) {}
-    await saveMaterialsToSupabase(DEFAULT_MATERIALS);
-    showToast('Tüm materyaller ve üretim hatları varsayılana sıfırlandı.', 'info');
+    await saveMaterialsToSupabase(joinMaterialsBlob(DEFAULT_MATERIALS, DEFAULT_PIPELINE_TYPES));
+    showToast('Tüm materyaller ve etap tipleri varsayılana sıfırlandı.', 'info');
     return true;
   };
 
@@ -1659,12 +1953,16 @@ export const DentalProvider = ({ children }) => {
         doctors: scopedDoctors,
         patients: scopedPatients,
         materials,
+        pipelineTypes,
         saveCustomMaterial,
         deleteCustomMaterial,
-        addStepToMaterial,
-        updateMaterialStep,
-        removeStepFromMaterial,
-        reorderMaterialSteps,
+        assignMaterialPipelineType,
+        savePipelineType,
+        deletePipelineType,
+        addStepToPipelineType,
+        updatePipelineTypeStep,
+        removeStepFromPipelineType,
+        reorderPipelineTypeSteps,
         resetMaterialsToDefault,
         vitaShades: VITA_SHADES,
         technicians: techniciansList.map(t => t.name),

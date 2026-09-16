@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useDental, isOrderFromCompletedImplant, normalizeStepName } from '../context/DentalContext';
+import { useDental, isOrderFromCompletedImplant, normalizeStepName, inferPipelineTypeId } from '../context/DentalContext';
 import { useAuth } from '../context/AuthContext';
 import { StepDateModal } from '../components/StepDateModal';
 import {
@@ -36,6 +36,7 @@ export const KanbanView = () => {
     doctors,
     patients,
     materials,
+    pipelineTypes,
     technicians,
     advanceOrderToNextStep,
     convertImplantToMdp,
@@ -109,52 +110,19 @@ export const KanbanView = () => {
   const activeOrders = orders.filter(o => o.status !== 'completed' && o.status !== 'rejected');
   const completedOrders = orders.filter(o => o.status === 'completed');
 
-  const BASE_STATIONS = [
-    { id: 'col-onay', title: 'Onay', stepName: 'Onay' },
-    { id: 'col-olcu-model', title: 'Ölçü + Model', stepName: 'Ölçü + Model' },
-    { id: 'col-abut-freze', title: 'Abutment + Freze', stepName: 'Abutment + Freze' },
-    { id: 'col-tork-olcu', title: 'Torklama + Ölçü', stepName: 'Torklama + Ölçü' },
-    { id: 'col-altyapi', title: 'Altyapı', stepName: 'Altyapı' },
-    { id: 'col-opak', title: 'Opak', stepName: 'Opak' },
-    { id: 'col-dentin', title: 'Dentin', stepName: 'Dentin' },
-    { id: 'col-prova', title: 'Prova', stepName: 'Prova' },
-    { id: 'col-glaze', title: 'Glaze', stepName: 'Glaze' }
-  ];
+  const pipelineTypeList = Object.values(pipelineTypes || {});
+  const activePipelineType = (pipelineTypes && pipelineTypes[filterCategory]) || pipelineTypes?.other;
 
   const STATIONS = React.useMemo(() => {
-    // Eğer belirli bir materyal seçilmişse, doğrudan o materyalin etaplarını getir
-    if (filterMaterial !== 'all' && materials[filterMaterial]?.steps) {
-      return materials[filterMaterial].steps.map(s => ({
-        id: `col-${s.name.toLowerCase().replace(/[^a-z0-9]/g, '-')}`,
-        title: s.name,
-        stepName: normalizeStepName(s.name)
-      }));
-    }
-
-    if (filterCategory === 'implant') {
-      return BASE_STATIONS.filter(s => !['Opak', 'Dentin'].includes(s.stepName));
-    }
-
-    const baseOther = BASE_STATIONS.filter(s => !['Abutment + Freze', 'Torklama + Ölçü', 'Prova'].includes(s.stepName));
-    const knownNames = new Set(BASE_STATIONS.map(s => s.stepName.toLowerCase()));
-    const customStations = [];
-
-    Object.values(materials || {}).forEach(m => {
-      (m.steps || []).forEach(s => {
-        const norm = normalizeStepName(s.name);
-        if (norm && !knownNames.has(norm.toLowerCase())) {
-          knownNames.add(norm.toLowerCase());
-          customStations.push({
-            id: `col-${norm.toLowerCase().replace(/[^a-z0-9]/g, '-')}`,
-            title: norm,
-            stepName: norm
-          });
-        }
-      });
-    });
-
-    return [...baseOther, ...customStations];
-  }, [filterMaterial, filterCategory, materials]);
+    const sourceSteps = (filterMaterial !== 'all' && materials[filterMaterial]?.steps)
+      ? materials[filterMaterial].steps
+      : (activePipelineType?.steps || []);
+    return sourceSteps.map(s => ({
+      id: `col-${String(s.name || '').toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
+      title: s.name,
+      stepName: normalizeStepName(s.name)
+    }));
+  }, [filterMaterial, materials, activePipelineType]);
 
   const currentStepName = (order) => normalizeStepName(order.steps?.[order.currentStepIndex || 0]?.name || '');
 
@@ -216,9 +184,9 @@ export const KanbanView = () => {
       if (!techName.includes(filterTechnician)) return false;
     }
 
-    // İmplant / Diğer kategorisi
-    if (filterCategory === 'implant' && order.materialId !== 'implant') return false;
-    if (filterCategory === 'other' && order.materialId === 'implant') return false;
+    // Etap tipi kategorisi
+    const orderTypeId = inferPipelineTypeId(materials[order.materialId] || { id: order.materialId });
+    if (filterCategory && orderTypeId !== filterCategory) return false;
 
     return true;
   });
@@ -439,22 +407,21 @@ export const KanbanView = () => {
             </button>
           </div>
 
-          {/* İmplant / Diğer hızlı kategori sekmeleri */}
+          {/* Etap tipi sekmeleri */}
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', width: '100%', marginTop: 6 }}>
-            <button
-              type="button"
-              className={`quick-chip-btn ${filterCategory === 'implant' ? 'active' : ''}`}
-              onClick={() => setFilterCategory('implant')}
-            >
-              İmplant ({activeOrders.filter(o => o.materialId === 'implant').length})
-            </button>
-            <button
-              type="button"
-              className={`quick-chip-btn ${filterCategory === 'other' ? 'active' : ''}`}
-              onClick={() => setFilterCategory('other')}
-            >
-              Diğer ({activeOrders.filter(o => o.materialId !== 'implant').length})
-            </button>
+            {pipelineTypeList.map(type => {
+              const count = activeOrders.filter(o => inferPipelineTypeId(materials[o.materialId] || { id: o.materialId }) === type.id).length;
+              return (
+                <button
+                  key={type.id}
+                  type="button"
+                  className={`quick-chip-btn ${filterCategory === type.id ? 'active' : ''}`}
+                  onClick={() => setFilterCategory(type.id)}
+                >
+                  {type.name} ({count})
+                </button>
+              );
+            })}
           </div>
 
           {/* Filtre Seçicileri */}
@@ -488,7 +455,13 @@ export const KanbanView = () => {
             {/* Materyal Filtresi */}
             <select
               value={filterMaterial}
-              onChange={(e) => setFilterMaterial(e.target.value)}
+              onChange={(e) => {
+                const val = e.target.value;
+                setFilterMaterial(val);
+                if (val !== 'all' && materials[val]) {
+                  setFilterCategory(inferPipelineTypeId(materials[val]));
+                }
+              }}
               className="kanban-filter-select"
             >
               <option value="all">🦷 Tüm Materyaller</option>

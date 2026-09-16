@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useDental } from '../context/DentalContext';
+import { useDental, inferPipelineTypeId } from '../context/DentalContext';
 import { useAuth } from '../context/AuthContext';
 import { Odontogram } from './Odontogram';
 import { X, Sparkles, UserPlus, Calendar, Clock, DollarSign, Paperclip, Box, UploadCloud, Loader2, Building2, Stethoscope } from 'lucide-react';
@@ -23,6 +23,7 @@ export const OrderModal = () => {
     materials,
     vitaShades,
     technicians,
+    pipelineTypes,
     setIsTeamModalOpen,
     saveOrder,
     saveDoctor,
@@ -492,10 +493,17 @@ export const OrderModal = () => {
                   onChange={(e) => setMaterialId(e.target.value)}
                   required
                 >
-                  {Object.values(materials).map(m => (
+                  {Object.values(materials).filter(m => m && m.id).map(m => (
                     <option key={m.id} value={m.id}>{m.name}</option>
                   ))}
                 </select>
+                {materials[materialId] && (
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 4, display: 'block' }}>
+                    {(pipelineTypes?.[inferPipelineTypeId(materials[materialId])]?.name) || 'Diğer'} hattı
+                    {' • '}
+                    {materials[materialId].steps?.length || 0} üretim etabı
+                  </span>
+                )}
               </div>
 
               {/* VITA Rengi */}
