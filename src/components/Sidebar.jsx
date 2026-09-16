@@ -18,7 +18,9 @@ import {
   X,
   Shield,
   LogOut,
-  Plus
+  Plus,
+  Calendar,
+  Layers
 } from 'lucide-react';
 
 export const Sidebar = ({ isOpen = false, onClose = () => {} }) => {
@@ -27,8 +29,10 @@ export const Sidebar = ({ isOpen = false, onClose = () => {} }) => {
   const fileInputRef = useRef(null);
   const [isResetting, setIsResetting] = useState(false);
 
+  const todayStr = new Date().toISOString().split('T')[0];
   const activeOrdersCount = orders.filter(o => o.status !== 'completed' && o.status !== 'rejected').length;
   const pendingCount = orders.filter(o => o.status === 'pending_approval').length;
+  const todayDeliveriesCount = orders.filter(o => o.deliveryDate === todayStr && o.status !== 'completed' && o.status !== 'rejected').length;
 
   const roleLabel = isAdmin ? 'Yönetici' : (isCompany ? 'Firma hesabı' : 'Kullanıcı');
   const initials = (currentUser?.name || currentUser?.username || '?')
@@ -136,6 +140,24 @@ export const Sidebar = ({ isOpen = false, onClose = () => {} }) => {
                 )}
               </NavLink>
             </li>
+            <li>
+              <NavLink
+                to="/calendar"
+                onClick={handleNavClick}
+                className={({ isActive }) => `nav-item-btn ${isActive ? 'active' : ''}`}
+              >
+                <Calendar size={18} />
+                <span>Teslimat Takvimi</span>
+                {todayDeliveriesCount > 0 && (
+                  <span
+                    className="nav-badge-count nav-badge-today"
+                    title={`Bugün teslim edilecek ${todayDeliveriesCount} sipariş var`}
+                  >
+                    {todayDeliveriesCount}
+                  </span>
+                )}
+              </NavLink>
+            </li>
           </>
         )}
 
@@ -152,6 +174,24 @@ export const Sidebar = ({ isOpen = false, onClose = () => {} }) => {
                 <span>İş Emirlerim</span>
                 {activeOrdersCount > 0 && (
                   <span className="nav-badge-count">{activeOrdersCount}</span>
+                )}
+              </NavLink>
+            </li>
+            <li>
+              <NavLink
+                to="/calendar"
+                onClick={handleNavClick}
+                className={({ isActive }) => `nav-item-btn ${isActive ? 'active' : ''}`}
+              >
+                <Calendar size={18} />
+                <span>Teslimat Takvimi</span>
+                {todayDeliveriesCount > 0 && (
+                  <span
+                    className="nav-badge-count nav-badge-today"
+                    title={`Bugün teslim edilecek ${todayDeliveriesCount} sipariş var`}
+                  >
+                    {todayDeliveriesCount}
+                  </span>
                 )}
               </NavLink>
             </li>
@@ -243,15 +283,15 @@ export const Sidebar = ({ isOpen = false, onClose = () => {} }) => {
           </button>
         </li>
 
-        <li className="nav-heading">Teknik Rehber</li>
+        <li className="nav-heading">Üretim Standartları</li>
         <li>
           <NavLink
             to="/materials"
             onClick={handleNavClick}
             className={({ isActive }) => `nav-item-btn ${isActive ? 'active' : ''}`}
           >
-            <BookOpen size={18} />
-            <span>Materyal & Aşamalar</span>
+            <Layers size={18} />
+            <span>Restorasyon & Üretim Hattı</span>
           </NavLink>
         </li>
 

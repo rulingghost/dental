@@ -19,6 +19,7 @@ import { DoctorsView } from './views/DoctorsView';
 import { PatientsView } from './views/PatientsView';
 import { MaterialsView } from './views/MaterialsView';
 import { UsersView } from './views/UsersView';
+import { CalendarView } from './views/CalendarView';
 
 const ToastNotification = () => {
   const { toast } = useDental();
@@ -90,6 +91,7 @@ const AppLayout = () => {
             />
             <Route path="/orders" element={<OrdersView />} />
             <Route path="/orders/:id" element={<OrderDetailView />} />
+            <Route path="/calendar" element={<CalendarView />} />
             <Route path="/companies" element={<AdminRoute><CompaniesView /></AdminRoute>} />
             <Route path="/doctors" element={<AdminRoute><DoctorsView /></AdminRoute>} />
             <Route path="/patients" element={<AdminRoute><PatientsView /></AdminRoute>} />

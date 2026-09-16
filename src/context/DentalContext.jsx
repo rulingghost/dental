@@ -15,7 +15,8 @@ import {
   deleteStlFromSupabase,
   linkFilesToOrderInSupabase,
   fetchTechniciansFromSupabase,
-  saveTechniciansToSupabase
+  saveTechniciansToSupabase,
+  saveMaterialsToSupabase
 } from '../services/supabaseService';
 
 const DentalContext = createContext(null);
@@ -43,26 +44,27 @@ const APPROVAL_STEP = {
   name: 'Onay',
   description: 'Kullanıcıdan gelen iş emri yönetici onayını bekler.',
   defaultTechnician: 'Yusuf Usta',
-  estimatedHours: 0
+  estimatedHours: 0,
+  isDefault: true
 };
 
 const OTHER_PIPELINE_STEPS = [
   { ...APPROVAL_STEP },
-  { order: 2, name: 'Ölçü + Model', description: 'Klinik ölçüsü alınır, laboratuvara aktarılır ve çalışma modeli elde edilir.', defaultTechnician: 'Ayşe Teknisyen', estimatedHours: 3 },
-  { order: 3, name: 'Altyapı', description: 'Restorasyon altyapısı hazırlanır.', defaultTechnician: 'Ali Usta', estimatedHours: 3 },
-  { order: 4, name: 'Opak', description: 'Opak uygulaması yapılır.', defaultTechnician: 'Yusuf Usta', estimatedHours: 2 },
-  { order: 5, name: 'Dentin', description: 'Dentin katmanı yığılır.', defaultTechnician: 'Yusuf Usta', estimatedHours: 3 },
-  { order: 6, name: 'Glaze', description: 'Glaze ve parlatma tamamlanır.', defaultTechnician: 'Elif Teknisyen', estimatedHours: 2 }
+  { order: 2, name: 'Ölçü + Model', description: 'Klinik ölçüsü alınır, laboratuvara aktarılır ve çalışma modeli elde edilir.', defaultTechnician: 'Yusuf Usta', estimatedHours: 3, isDefault: true },
+  { order: 3, name: 'Altyapı', description: 'Restorasyon altyapısı hazırlanır.', defaultTechnician: 'Yusuf Usta', estimatedHours: 3, isDefault: true },
+  { order: 4, name: 'Opak', description: 'Opak uygulaması yapılır.', defaultTechnician: 'Yusuf Usta', estimatedHours: 2, isDefault: true },
+  { order: 5, name: 'Dentin', description: 'Dentin katmanı yığılır.', defaultTechnician: 'Yusuf Usta', estimatedHours: 3, isDefault: true },
+  { order: 6, name: 'Glaze', description: 'Glaze ve parlatma tamamlanır.', defaultTechnician: 'Yusuf Usta', estimatedHours: 2, isDefault: true }
 ];
 
 const IMPLANT_PIPELINE_STEPS = [
   { ...APPROVAL_STEP },
-  { order: 2, name: 'Ölçü + Model', description: 'İmplant ölçüsü alınır ve analoglu çalışma modeli elde edilir.', defaultTechnician: 'Ayşe Teknisyen', estimatedHours: 3 },
-  { order: 3, name: 'Abutment + Freze', description: 'Abutment / dayanak hazırlanır ve altyapı veya üstyapı frezelenir.', defaultTechnician: 'Murat Teknisyen', estimatedHours: 7 },
-  { order: 4, name: 'Torklama + Ölçü', description: 'Abutment torklanır ve torklama sonrası kontrol ölçüsü alınır.', defaultTechnician: 'Ali Usta', estimatedHours: 3 },
-  { order: 5, name: 'Altyapı', description: 'Porselen öncesi altyapı hazırlanır.', defaultTechnician: 'Ali Usta', estimatedHours: 3 },
-  { order: 6, name: 'Prova', description: 'Altyapı / üstyapı provası yapılır.', defaultTechnician: 'Yusuf Usta', estimatedHours: 2 },
-  { order: 7, name: 'Glaze', description: 'Glaze ve parlatma tamamlanır.', defaultTechnician: 'Elif Teknisyen', estimatedHours: 2 }
+  { order: 2, name: 'Ölçü + Model', description: 'İmplant ölçüsü alınır ve analoglu çalışma modeli elde edilir.', defaultTechnician: 'Yusuf Usta', estimatedHours: 3, isDefault: true },
+  { order: 3, name: 'Abutment + Freze', description: 'Abutment / dayanak hazırlanır ve altyapı veya üstyapı frezelenir.', defaultTechnician: 'Yusuf Usta', estimatedHours: 7, isDefault: true },
+  { order: 4, name: 'Torklama + Ölçü', description: 'Abutment torklanır ve torklama sonrası kontrol ölçüsü alınır.', defaultTechnician: 'Yusuf Usta', estimatedHours: 3, isDefault: true },
+  { order: 5, name: 'Altyapı', description: 'Porselen öncesi altyapı hazırlanır.', defaultTechnician: 'Yusuf Usta', estimatedHours: 3, isDefault: true },
+  { order: 6, name: 'Prova', description: 'Altyapı / üstyapı provası yapılır.', defaultTechnician: 'Yusuf Usta', estimatedHours: 2, isDefault: true },
+  { order: 7, name: 'Glaze', description: 'Glaze ve parlatma tamamlanır.', defaultTechnician: 'Yusuf Usta', estimatedHours: 2, isDefault: true }
 ];
 
 export const DEFAULT_MATERIALS = {
@@ -160,7 +162,15 @@ export function migrateOrderToCurrentPipeline(order) {
     currentNames.length === templateNames.length &&
     currentNames.every((name, idx) => name === templateNames[idx]);
 
-  if (alreadyMigrated && order.materialId === resolvedId) return order;
+  if (alreadyMigrated && order.materialId === resolvedId) {
+    return {
+      ...order,
+      steps: (order.steps || []).map(s => ({
+        ...s,
+        technician: normalizeTechnicianName(s.technician)
+      }))
+    };
+  }
 
   const isCompleted = order.status === 'completed';
   const isPending = order.status === 'pending_approval' || order.status === 'rejected';
@@ -180,7 +190,7 @@ export function migrateOrderToCurrentPipeline(order) {
     order: s.order,
     name: s.name,
     description: s.description,
-    technician: (order.steps && order.steps[Math.min(oldIdx, Math.max(0, (order.steps || []).length - 1))]?.technician) || s.defaultTechnician || '',
+    technician: normalizeTechnicianName((order.steps && order.steps[Math.min(oldIdx, Math.max(0, (order.steps || []).length - 1))]?.technician) || s.defaultTechnician || 'Yusuf Usta'),
     notes: '',
     status: isCompleted || idx < newIdx ? 'completed' : (idx === newIdx ? 'in_progress' : 'pending'),
     startedAt: idx === newIdx ? (oldStep?.startedAt || null) : null,
@@ -219,11 +229,83 @@ export const VITA_SHADES = [
 ];
 
 export const TECHNICIANS_STORAGE_KEY = 'dentallab_technicians_v2';
+export const MATERIALS_STORAGE_KEY = 'dentallab_materials_v2';
 export const DEFAULT_TECHNICIANS = [
-  { id: 'tech-1', name: 'Yusuf Yaşar', role: 'Baş Teknisyen / Seramist' }
+  { id: 'tech-1', name: 'Yusuf Usta', role: 'Baş Teknisyen / Laboratuvar Şefi' }
 ];
 
 export const TECHNICIANS = DEFAULT_TECHNICIANS.map(t => t.name);
+
+export function normalizeTechnicianName(name) {
+  if (!name) return 'Yusuf Usta';
+  const lower = name.toLowerCase();
+  if (
+    lower.includes('ayşe') ||
+    lower.includes('ali') ||
+    lower.includes('elif') ||
+    lower.includes('murat') ||
+    lower.includes('yaşar') ||
+    lower.includes('atanma')
+  ) {
+    return 'Yusuf Usta';
+  }
+  return name;
+}
+
+export const DEFAULT_OTHER_STEP_NAMES = ['Onay', 'Ölçü + Model', 'Altyapı', 'Opak', 'Dentin', 'Glaze'];
+export const DEFAULT_IMPLANT_STEP_NAMES = ['Onay', 'Ölçü + Model', 'Abutment + Freze', 'Torklama + Ölçü', 'Altyapı', 'Prova', 'Glaze'];
+
+export function sanitizeMaterials(mats) {
+  if (!mats || typeof mats !== 'object') return mats;
+  const cleaned = {};
+  for (const [key, mat] of Object.entries(mats)) {
+    if (!mat) continue;
+    const isImplant = key === 'implant';
+    const defaultNames = isImplant ? DEFAULT_IMPLANT_STEP_NAMES : DEFAULT_OTHER_STEP_NAMES;
+    const isCoreMat = ['mdp', 'zirconia', 'implant', 'lamina'].includes(key);
+
+    cleaned[key] = {
+      ...mat,
+      steps: (mat.steps || []).map(step => {
+        let tech = (step.defaultTechnician || '').trim();
+        if (!tech || /ayşe|ali|elif|murat|yaşar/i.test(tech) || tech.includes('Teknisyen')) {
+          tech = 'Yusuf Usta';
+        }
+        let isDef = step.isDefault;
+        if (isDef === undefined) {
+          if (isCoreMat) {
+            isDef = defaultNames.includes(step.name);
+          } else {
+            isDef = false;
+          }
+        }
+        return {
+          ...step,
+          defaultTechnician: tech,
+          isDefault: Boolean(isDef)
+        };
+      })
+    };
+  }
+  return cleaned;
+}
+
+export function sanitizeTechnicians(list) {
+  if (!Array.isArray(list) || list.length === 0) {
+    return DEFAULT_TECHNICIANS;
+  }
+  const filtered = list.filter(t => {
+    const name = (t.name || '').toLowerCase();
+    return !name.includes('ayşe') && !name.includes('ali') && !name.includes('elif') && !name.includes('murat') && !name.includes('yaşar');
+  });
+  if (filtered.length === 0) {
+    return DEFAULT_TECHNICIANS;
+  }
+  if (!filtered.some(t => t.name.toLowerCase().includes('yusuf'))) {
+    return [{ id: 'tech-1', name: 'Yusuf Usta', role: 'Baş Teknisyen / Laboratuvar Şefi' }, ...filtered];
+  }
+  return filtered;
+}
 
 // TEMİZ BAŞLANGIÇ: ÖRNEK VERİLER TAMAMEN KALDIRILDI!
 const EMPTY_INITIAL_DATA = {
@@ -297,13 +379,19 @@ export const DentalProvider = ({ children }) => {
   const [isDbModalOpen, setIsDbModalOpen] = useState(false);
   const [isTeamModalOpen, setIsTeamModalOpen] = useState(false);
 
-  // Dinamik Teknisyen / Ekip Yönetimi
+  // Dinamik Teknisyen / Ekip Yönetimi (Sadece Yusuf Usta)
   const [techniciansList, setTechniciansList] = useState(() => {
     try {
       const saved = localStorage.getItem(TECHNICIANS_STORAGE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const sanitized = sanitizeTechnicians(parsed);
+          try {
+            localStorage.setItem(TECHNICIANS_STORAGE_KEY, JSON.stringify(sanitized));
+          } catch (e) {}
+          return sanitized;
+        }
       }
     } catch (e) {}
     return DEFAULT_TECHNICIANS;
@@ -314,6 +402,30 @@ export const DentalProvider = ({ children }) => {
       localStorage.setItem(TECHNICIANS_STORAGE_KEY, JSON.stringify(techniciansList));
     } catch (e) {}
   }, [techniciansList]);
+
+  // Dinamik Restorasyon Materyalleri ve Üretim Hatları
+  const [materials, setMaterials] = useState(() => {
+    try {
+      const saved = localStorage.getItem(MATERIALS_STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) {
+          const sanitized = sanitizeMaterials({ ...DEFAULT_MATERIALS, ...parsed });
+          try {
+            localStorage.setItem(MATERIALS_STORAGE_KEY, JSON.stringify(sanitized));
+          } catch (e) {}
+          return sanitized;
+        }
+      }
+    } catch (e) {}
+    return sanitizeMaterials(DEFAULT_MATERIALS);
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(MATERIALS_STORAGE_KEY, JSON.stringify(materials));
+    } catch (e) {}
+  }, [materials]);
 
   // Veritabanına Otomatik Kaydetme
   const persistToDatabase = useCallback(async (dataToPersist) => {
@@ -372,14 +484,27 @@ export const DentalProvider = ({ children }) => {
           return next;
         });
 
-        // Teknisyenleri buluttan gelenle eşitle (silinenler dahil kalıcı)
+        // Teknisyenleri buluttan gelenle eşitle (Sadece Yusuf Usta)
         if (Array.isArray(remote.technicians)) {
           setTechniciansList(prev => {
-            if (JSON.stringify(prev) === JSON.stringify(remote.technicians)) return prev;
+            const sanitized = sanitizeTechnicians(remote.technicians);
+            if (JSON.stringify(prev) === JSON.stringify(sanitized)) return prev;
             try {
-              localStorage.setItem(TECHNICIANS_STORAGE_KEY, JSON.stringify(remote.technicians));
+              localStorage.setItem(TECHNICIANS_STORAGE_KEY, JSON.stringify(sanitized));
             } catch (e) {}
-            return remote.technicians;
+            return sanitized;
+          });
+        }
+
+        // Dinamik Materyalleri ve Etapları buluttan gelenle eşitle
+        if (remote.customMaterials && typeof remote.customMaterials === 'object' && Object.keys(remote.customMaterials).length > 0) {
+          setMaterials(prev => {
+            const sanitized = sanitizeMaterials({ ...DEFAULT_MATERIALS, ...remote.customMaterials });
+            if (JSON.stringify(prev) === JSON.stringify(sanitized)) return prev;
+            try {
+              localStorage.setItem(MATERIALS_STORAGE_KEY, JSON.stringify(sanitized));
+            } catch (e) {}
+            return sanitized;
           });
         }
 
@@ -1276,6 +1401,224 @@ export const DentalProvider = ({ children }) => {
     showToast('Hasta silindi.', 'warning');
   };
 
+  // --- DİNAMİK RESTORASYON MATERYALLERİ & ETAP YÖNETİMİ ---
+  const saveCustomMaterial = async (matData) => {
+    if (denyProductionChange()) return null;
+    if (!matData.name || !matData.name.trim()) {
+      showToast('Materyal adı boş olamaz.', 'error');
+      return null;
+    }
+    const cleanId = (matData.id || matData.name.toLowerCase().trim().replace(/[^a-z0-9]/g, '_'));
+    if (['mdp', 'zirconia', 'implant', 'lamina'].includes(cleanId) && materials[cleanId]) {
+      showToast('Temel sistem materyalleri düzenlenemez.', 'warning');
+      return null;
+    }
+    const updated = {
+      id: cleanId,
+      name: matData.name.trim(),
+      badgeClass: matData.badgeClass || `badge-mat-${cleanId}`,
+      color: matData.color || '#0284c7',
+      description: matData.description || `${matData.name.trim()} restorasyon üretimi.`,
+      steps: Array.isArray(matData.steps) && matData.steps.length > 0
+        ? matData.steps.map((s, idx) => ({ ...s, order: idx + 1 }))
+        : [
+            { order: 1, name: 'Onay', description: 'İş emri onayı beklenir.', defaultTechnician: 'Yusuf Usta', estimatedHours: 0 },
+            { order: 2, name: 'Ölçü + Model', description: 'Model hazırlanır.', defaultTechnician: 'Yusuf Usta', estimatedHours: 3 },
+            { order: 3, name: 'Üretim / İşleme', description: 'Restorasyon ana üretimi.', defaultTechnician: 'Yusuf Usta', estimatedHours: 4 },
+            { order: 4, name: 'Glaze / Bitiş', description: 'Polisaj ve son kontroller.', defaultTechnician: 'Yusuf Usta', estimatedHours: 2 }
+          ]
+    };
+
+    setMaterials(prev => {
+      const next = { ...prev, [cleanId]: updated };
+      saveMaterialsToSupabase(next);
+      return next;
+    });
+    showToast(`"${updated.name}" materyali başarıyla kaydedildi ✓`, 'success');
+    return updated;
+  };
+
+  const deleteCustomMaterial = async (matId) => {
+    if (denyProductionChange()) return false;
+    if (['mdp', 'zirconia', 'implant', 'lamina'].includes(matId)) {
+      showToast('Temel sistem materyalleri silinemez. Etaplarını düzenleyebilirsiniz.', 'warning');
+      return false;
+    }
+    const inUse = (data.orders || []).some(o => o.materialId === matId && o.status !== 'completed' && o.status !== 'rejected');
+    if (inUse) {
+      showToast('Bu materyali kullanan aktif siparişler var. Önce siparişleri tamamlayın veya silin.', 'error');
+      return false;
+    }
+
+    setMaterials(prev => {
+      const next = { ...prev };
+      delete next[matId];
+      saveMaterialsToSupabase(next);
+      return next;
+    });
+    showToast('Materyal silindi.', 'warning');
+    return true;
+  };
+
+  const addStepToMaterial = async (matId, stepData) => {
+    if (denyProductionChange()) return null;
+    const mat = materials[matId];
+    if (!mat) return null;
+    const currentSteps = mat.steps || [];
+    const newStep = {
+      order: currentSteps.length + 1,
+      name: stepData.name?.trim() || 'Yeni Etap',
+      description: stepData.description?.trim() || 'Özel laboratuvar aşaması açıklaması',
+      defaultTechnician: 'Yusuf Usta',
+      estimatedHours: parseFloat(stepData.estimatedHours) || 2,
+      isDefault: false
+    };
+    const nextSteps = [...currentSteps, newStep];
+    const updatedMat = { ...mat, steps: nextSteps };
+
+    setMaterials(prev => {
+      const next = { ...prev, [matId]: updatedMat };
+      saveMaterialsToSupabase(next);
+      return next;
+    });
+    showToast(`"${newStep.name}" etabı eklendi.`, 'success');
+    return newStep;
+  };
+
+  const updateMaterialStep = async (matId, stepOrder, stepData) => {
+    if (denyProductionChange()) return null;
+    const mat = materials[matId];
+    if (!mat) return null;
+    const target = (mat.steps || []).find(s => s.order === stepOrder);
+    if (target && target.isDefault) {
+      showToast('Temel sistem etapları düzenlenemez.', 'error');
+      return null;
+    }
+    const nextSteps = (mat.steps || []).map(s => {
+      if (s.order === stepOrder) {
+        return {
+          ...s,
+          name: stepData.name !== undefined ? stepData.name.trim() : s.name,
+          description: stepData.description !== undefined ? stepData.description.trim() : s.description,
+          defaultTechnician: 'Yusuf Usta',
+          estimatedHours: stepData.estimatedHours !== undefined ? (parseFloat(stepData.estimatedHours) || 0) : s.estimatedHours,
+          isDefault: false
+        };
+      }
+      return s;
+    });
+    const updatedMat = { ...mat, steps: nextSteps };
+
+    setMaterials(prev => {
+      const next = { ...prev, [matId]: updatedMat };
+      saveMaterialsToSupabase(next);
+      return next;
+    });
+    showToast('Etap güncellendi.', 'success');
+    return updatedMat;
+  };
+
+  const removeStepFromMaterial = async (matId, stepOrder, orderIdsToDelete = []) => {
+    if (denyProductionChange()) return false;
+    const mat = materials[matId];
+    if (!mat) return false;
+    const stepToDelete = (mat.steps || []).find(s => s.order === stepOrder);
+    if (!stepToDelete) return false;
+
+    // Temel sistem etapları asla silinemez
+    if (stepToDelete.isDefault) {
+      showToast('Temel sistem etapları silinemez.', 'error');
+      return false;
+    }
+
+    if ((mat.steps || []).length <= 1) {
+      showToast('Bir materyalde en az 1 üretim etabı bulunmalıdır.', 'warning');
+      return false;
+    }
+
+    // 1. Bu etapta yer alan ve silinmesi onaylanan iş emirlerini kalıcı olarak sil
+    if (Array.isArray(orderIdsToDelete) && orderIdsToDelete.length > 0) {
+      const idsSet = new Set(orderIdsToDelete.map(id => String(id)));
+      setData(prev => ({
+        ...prev,
+        orders: (prev.orders || []).filter(o => !idsSet.has(String(o.id)))
+      }));
+      for (const ordId of orderIdsToDelete) {
+        deleteOrderFromSupabase(ordId);
+      }
+    }
+
+    // 2. Kalan iş emirlerinde (bu adımı içerenlerde) adımları normalize et
+    setData(prev => {
+      let ordersChanged = false;
+      const updatedOrders = (prev.orders || []).map(o => {
+        const oldSteps = o.steps || [];
+        const hasStep = oldSteps.some(s => s.name === stepToDelete.name);
+        if (!hasStep) return o;
+
+        ordersChanged = true;
+        const filteredSteps = oldSteps
+          .filter(s => s.name !== stepToDelete.name)
+          .map((s, idx) => ({ ...s, order: idx + 1 }));
+        const maxIdx = Math.max(0, filteredSteps.length - 1);
+        const newIdx = Math.min(o.currentStepIndex || 0, maxIdx);
+        return {
+          ...o,
+          steps: filteredSteps,
+          currentStepIndex: newIdx
+        };
+      });
+      return ordersChanged ? { ...prev, orders: updatedOrders } : prev;
+    });
+
+    // 3. Etabı materyalden çıkar
+    const nextSteps = (mat.steps || [])
+      .filter(s => s.order !== stepOrder)
+      .map((s, idx) => ({ ...s, order: idx + 1 }));
+    const updatedMat = { ...mat, steps: nextSteps };
+
+    setMaterials(prev => {
+      const next = { ...prev, [matId]: updatedMat };
+      saveMaterialsToSupabase(next);
+      return next;
+    });
+
+    const deletedCount = (orderIdsToDelete || []).length;
+    if (deletedCount > 0) {
+      showToast(`"${stepToDelete.name}" etabı ve içerisindeki ${deletedCount} iş emri başarıyla silindi.`, 'warning');
+    } else {
+      showToast(`"${stepToDelete.name}" etabı silindi.`, 'warning');
+    }
+    return true;
+  };
+
+  const reorderMaterialSteps = async (matId, newSteps) => {
+    if (denyProductionChange()) return false;
+    const mat = materials[matId];
+    if (!mat) return false;
+    const normalized = newSteps.map((s, idx) => ({ ...s, order: idx + 1 }));
+    const updatedMat = { ...mat, steps: normalized };
+
+    setMaterials(prev => {
+      const next = { ...prev, [matId]: updatedMat };
+      saveMaterialsToSupabase(next);
+      return next;
+    });
+    showToast('Etap sıralaması güncellendi.', 'success');
+    return true;
+  };
+
+  const resetMaterialsToDefault = async () => {
+    if (denyProductionChange()) return false;
+    setMaterials(DEFAULT_MATERIALS);
+    try {
+      localStorage.setItem(MATERIALS_STORAGE_KEY, JSON.stringify(DEFAULT_MATERIALS));
+    } catch (e) {}
+    await saveMaterialsToSupabase(DEFAULT_MATERIALS);
+    showToast('Tüm materyaller ve üretim hatları varsayılana sıfırlandı.', 'info');
+    return true;
+  };
+
   const scopedCompanies = useMemo(() => {
     const all = data.companies || [];
     if (!isCompany) return all;
@@ -1315,7 +1658,14 @@ export const DentalProvider = ({ children }) => {
         companies: scopedCompanies,
         doctors: scopedDoctors,
         patients: scopedPatients,
-        materials: DEFAULT_MATERIALS,
+        materials,
+        saveCustomMaterial,
+        deleteCustomMaterial,
+        addStepToMaterial,
+        updateMaterialStep,
+        removeStepFromMaterial,
+        reorderMaterialSteps,
+        resetMaterialsToDefault,
         vitaShades: VITA_SHADES,
         technicians: techniciansList.map(t => t.name),
         techniciansList,

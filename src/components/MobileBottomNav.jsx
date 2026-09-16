@@ -7,14 +7,17 @@ import {
   Columns3,
   Plus,
   ClipboardList,
-  Building2
+  Building2,
+  Calendar
 } from 'lucide-react';
 
 export const MobileBottomNav = () => {
   const { orders, setIsOrderModalOpen, setEditingOrder } = useDental();
   const { isAdmin, isOperator, isCompany } = useAuth();
   const location = useLocation();
+  const todayStr = new Date().toISOString().split('T')[0];
   const activeOrdersCount = orders.filter(o => o.status !== 'completed' && o.status !== 'rejected').length;
+  const todayDeliveriesCount = orders.filter(o => o.deliveryDate === todayStr && o.status !== 'completed' && o.status !== 'rejected').length;
   const clinicsActive = ['/companies', '/doctors', '/patients'].some(
     (path) => location.pathname === path || location.pathname.startsWith(`${path}/`)
   );
@@ -33,6 +36,19 @@ export const MobileBottomNav = () => {
             )}
           </div>
           <span>İşlerim</span>
+        </NavLink>
+
+        <NavLink
+          to="/calendar"
+          className={({ isActive }) => `mobile-nav-item ${isActive ? 'active' : ''}`}
+        >
+          <div className="mobile-nav-icon-wrap">
+            <Calendar size={20} />
+            {todayDeliveriesCount > 0 && (
+              <span className="mobile-nav-badge">{todayDeliveriesCount}</span>
+            )}
+          </div>
+          <span>Takvim</span>
         </NavLink>
 
         <button
@@ -99,22 +115,25 @@ export const MobileBottomNav = () => {
       </button>
 
       <NavLink
+        to="/calendar"
+        className={({ isActive }) => `mobile-nav-item ${isActive ? 'active' : ''}`}
+      >
+        <div className="mobile-nav-icon-wrap">
+          <Calendar size={20} />
+          {todayDeliveriesCount > 0 && (
+            <span className="mobile-nav-badge">{todayDeliveriesCount}</span>
+          )}
+        </div>
+        <span>Takvim</span>
+      </NavLink>
+
+      <NavLink
         to="/orders"
         className={({ isActive }) => `mobile-nav-item ${isActive ? 'active' : ''}`}
       >
         <ClipboardList size={20} />
         <span>{isOperator ? 'İşlerim' : 'İşler'}</span>
       </NavLink>
-
-      {isAdmin && (
-        <NavLink
-          to="/companies"
-          className={() => `mobile-nav-item ${clinicsActive ? 'active' : ''}`}
-        >
-          <Building2 size={20} />
-          <span>Klinikler</span>
-        </NavLink>
-      )}
     </nav>
   );
 };

@@ -462,7 +462,7 @@ export const OrderModal = () => {
                   <input
                     type="text"
                     className="dental-input"
-                    placeholder="Örn: Ayşe Demir"
+                    placeholder="Örn: Ahmet Yılmaz"
                     value={newPatientName}
                     onChange={(e) => setNewPatientName(e.target.value)}
                     autoFocus={isNewPatient}

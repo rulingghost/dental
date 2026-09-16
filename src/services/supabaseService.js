@@ -160,7 +160,25 @@ export async function fetchAllFromSupabase() {
       } catch (e) {}
     }
 
-    return { companies, doctors, patients, orders, technicians, users };
+    let calendarEvents = null;
+    const sysEvents = (compData || []).find(c => c.id === 'sys-dentallab-calendar');
+    if (sysEvents?.address) {
+      try {
+        const parsed = JSON.parse(sysEvents.address);
+        if (Array.isArray(parsed)) calendarEvents = parsed;
+      } catch (e) {}
+    }
+
+    let customMaterials = null;
+    const sysMaterials = (compData || []).find(c => c.id === 'sys-dentallab-materials');
+    if (sysMaterials?.address) {
+      try {
+        const parsed = JSON.parse(sysMaterials.address);
+        if (parsed && typeof parsed === 'object') customMaterials = parsed;
+      } catch (e) {}
+    }
+
+    return { companies, doctors, patients, orders, technicians, users, calendarEvents, customMaterials };
   } catch (error) {
     console.error('Supabase fetch error:', error);
     return null;
@@ -635,5 +653,92 @@ export async function saveTechniciansToSupabase(techsList) {
   }
 }
 
+// 17. ÖZEL TAKVİM & RANDEVU & KURYE ETKİNLİKLERİNİ BULUTTA SENKRONİZE ETME
+export const SYS_CALENDAR_EVENTS_COMPANY_ID = 'sys-dentallab-calendar';
 
+export async function fetchCalendarEventsFromSupabase() {
+  try {
+    const headers = getReadHeaders();
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/companies?id=eq.${SYS_CALENDAR_EVENTS_COMPANY_ID}&select=address`, { headers });
+    if (!res.ok) return null;
+    const rows = await res.json().catch(() => []);
+    if (Array.isArray(rows) && rows.length > 0 && rows[0]?.address) {
+      const parsed = JSON.parse(rows[0].address);
+      if (Array.isArray(parsed)) return parsed;
+    }
+    return null;
+  } catch (error) {
+    console.warn('fetchCalendarEventsFromSupabase error:', error);
+    return null;
+  }
+}
 
+export async function saveCalendarEventsToSupabase(eventsList) {
+  try {
+    if (!Array.isArray(eventsList)) return false;
+    const headers = getHeaders();
+    const payload = {
+      id: SYS_CALENDAR_EVENTS_COMPANY_ID,
+      name: 'SYSTEM_CALENDAR_EVENTS_STORAGE',
+      contact_person: 'SYSTEM',
+      phone: '',
+      email: 'system@dentallab.internal',
+      address: JSON.stringify(eventsList),
+      balance: 0
+    };
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/companies`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload)
+    });
+    return res.ok;
+  } catch (error) {
+    console.warn('saveCalendarEventsToSupabase error:', error);
+    return false;
+  }
+}
+
+// 18. DİNAMİK RESTORASYON MATERYALLERİ VE ÜRETİM HATLARI BULUT SENKRONİZASYONU
+export const SYS_MATERIALS_COMPANY_ID = 'sys-dentallab-materials';
+
+export async function fetchMaterialsFromSupabase() {
+  try {
+    const headers = getReadHeaders();
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/companies?id=eq.${SYS_MATERIALS_COMPANY_ID}&select=address`, { headers });
+    if (!res.ok) return null;
+    const rows = await res.json().catch(() => []);
+    if (Array.isArray(rows) && rows.length > 0 && rows[0]?.address) {
+      const parsed = JSON.parse(rows[0].address);
+      if (parsed && typeof parsed === 'object') return parsed;
+    }
+    return null;
+  } catch (error) {
+    console.warn('fetchMaterialsFromSupabase error:', error);
+    return null;
+  }
+}
+
+export async function saveMaterialsToSupabase(materialsData) {
+  try {
+    if (!materialsData || typeof materialsData !== 'object') return false;
+    const headers = getHeaders();
+    const payload = {
+      id: SYS_MATERIALS_COMPANY_ID,
+      name: 'SYSTEM_MATERIALS_STORAGE',
+      contact_person: 'SYSTEM',
+      phone: '',
+      email: 'system@dentallab.internal',
+      address: JSON.stringify(materialsData),
+      balance: 0
+    };
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/companies`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload)
+    });
+    return res.ok;
+  } catch (error) {
+    console.warn('saveMaterialsToSupabase error:', error);
+    return false;
+  }
+}

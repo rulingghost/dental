@@ -109,7 +109,7 @@ export const KanbanView = () => {
   const activeOrders = orders.filter(o => o.status !== 'completed' && o.status !== 'rejected');
   const completedOrders = orders.filter(o => o.status === 'completed');
 
-  const ALL_STATIONS = [
+  const BASE_STATIONS = [
     { id: 'col-onay', title: 'Onay', stepName: 'Onay' },
     { id: 'col-olcu-model', title: 'Ölçü + Model', stepName: 'Ölçü + Model' },
     { id: 'col-abut-freze', title: 'Abutment + Freze', stepName: 'Abutment + Freze' },
@@ -120,9 +120,41 @@ export const KanbanView = () => {
     { id: 'col-prova', title: 'Prova', stepName: 'Prova' },
     { id: 'col-glaze', title: 'Glaze', stepName: 'Glaze' }
   ];
-  const IMPLANT_STATIONS = ALL_STATIONS.filter(s => !['Opak', 'Dentin'].includes(s.stepName));
-  const OTHER_STATIONS = ALL_STATIONS.filter(s => !['Abutment + Freze', 'Torklama + Ölçü', 'Prova'].includes(s.stepName));
-  const STATIONS = filterCategory === 'implant' ? IMPLANT_STATIONS : OTHER_STATIONS;
+
+  const STATIONS = React.useMemo(() => {
+    // Eğer belirli bir materyal seçilmişse, doğrudan o materyalin etaplarını getir
+    if (filterMaterial !== 'all' && materials[filterMaterial]?.steps) {
+      return materials[filterMaterial].steps.map(s => ({
+        id: `col-${s.name.toLowerCase().replace(/[^a-z0-9]/g, '-')}`,
+        title: s.name,
+        stepName: normalizeStepName(s.name)
+      }));
+    }
+
+    if (filterCategory === 'implant') {
+      return BASE_STATIONS.filter(s => !['Opak', 'Dentin'].includes(s.stepName));
+    }
+
+    const baseOther = BASE_STATIONS.filter(s => !['Abutment + Freze', 'Torklama + Ölçü', 'Prova'].includes(s.stepName));
+    const knownNames = new Set(BASE_STATIONS.map(s => s.stepName.toLowerCase()));
+    const customStations = [];
+
+    Object.values(materials || {}).forEach(m => {
+      (m.steps || []).forEach(s => {
+        const norm = normalizeStepName(s.name);
+        if (norm && !knownNames.has(norm.toLowerCase())) {
+          knownNames.add(norm.toLowerCase());
+          customStations.push({
+            id: `col-${norm.toLowerCase().replace(/[^a-z0-9]/g, '-')}`,
+            title: norm,
+            stepName: norm
+          });
+        }
+      });
+    });
+
+    return [...baseOther, ...customStations];
+  }, [filterMaterial, filterCategory, materials]);
 
   const currentStepName = (order) => normalizeStepName(order.steps?.[order.currentStepIndex || 0]?.name || '');
 
