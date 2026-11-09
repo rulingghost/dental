@@ -138,9 +138,66 @@ export const LoginView = () => {
           </button>
         </form>
 
-        {/* Alt Bilgi */}
+        {/* Alt Bilgi & Hızlı Demo Hesapları */}
+        <div
+          style={{
+            marginTop: 18,
+            padding: '12px 14px',
+            borderRadius: 12,
+            background: 'rgba(2, 132, 199, 0.06)',
+            border: '1px dashed rgba(2, 132, 199, 0.35)'
+          }}
+        >
+          <div style={{ fontSize: '0.76rem', fontWeight: 800, color: 'var(--dental-blue)', marginBottom: 8, textAlign: 'center' }}>
+            🎯 ÖRNEK DEMO HESAPLARI (Tek Tıkla Giriş)
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {[
+              { label: '🛡️ Yönetici (Tam Yetki)', user: 'demo', pass: '1234' },
+              { label: '🏥 Örnek Klinik (DentArt)', user: 'dentart', pass: '1234' },
+              { label: '👨‍🔬 Laboratuvar Kullanıcısı', user: 'kullanici', pass: '1234' }
+            ].map((acc) => (
+              <button
+                key={acc.user}
+                type="button"
+                onClick={async () => {
+                  setUsername(acc.user);
+                  setPassword(acc.pass);
+                  setError('');
+                  setLoading(true);
+                  try {
+                    const res = await login(acc.user, acc.pass);
+                    if (!res.ok) setError(res.error || 'Giriş yapılamadı.');
+                  } finally {
+                    setLoading(false);
+                  }
+                }}
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  width: '100%',
+                  padding: '7px 10px',
+                  borderRadius: 8,
+                  border: '1px solid var(--border-subtle)',
+                  background: 'var(--bg-surface-elevated)',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.78rem',
+                  cursor: 'pointer',
+                  textAlign: 'left'
+                }}
+              >
+                <span style={{ fontWeight: 700 }}>{acc.label}</span>
+                <span style={{ fontFamily: 'JetBrains Mono', fontSize: '0.74rem', color: 'var(--dental-blue)', fontWeight: 700 }}>
+                  {acc.user} / {acc.pass}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+
         <div className="login-footer-note">
-          <span>Güvenli Laboratuvar Oturumu • © 2026 DentalLab Pro</span>
+          <span>Demo Laboratuvar Oturumu (İzole Mod) • © 2026 DentalLab Pro</span>
         </div>
       </div>
     </div>

@@ -3,14 +3,14 @@ import { fetchUsersFromSupabase, saveUsersToSupabase } from '../services/supabas
 
 const AuthContext = createContext(null);
 
-export const USERS_STORAGE_KEY = 'dentallab_users_v1';
-export const SESSION_STORAGE_KEY = 'dentallab_session_v1';
+export const USERS_STORAGE_KEY = 'dentallab_demo_users_v1';
+export const SESSION_STORAGE_KEY = 'dentallab_demo_session_v1';
 
 export const ADMIN_CREDENTIALS = {
   id: 'user-admin',
-  username: 'yusuf',
-  password: 'yusuf2026',
-  name: 'Yusuf (Yönetici)'
+  username: 'demo',
+  password: '1234',
+  name: 'Yusuf (Demo Yönetici)'
 };
 
 export const ROLES = {
@@ -87,9 +87,36 @@ function seedUsers() {
       id: 'user-operator',
       username: 'kullanici',
       passwordHash: hashPassword('1234'),
-      name: 'Laboratuvar Kullanıcısı',
+      name: 'Örnek Laboratuvar Kullanıcısı',
       role: ROLES.operator,
       companyId: null,
+      createdAt: new Date().toISOString()
+    },
+    {
+      id: 'user-comp-1',
+      username: 'dentart',
+      passwordHash: hashPassword('1234'),
+      name: 'DentArt Ağız ve Diş Sağlığı Polikliniği',
+      role: ROLES.company,
+      companyId: 'comp-1',
+      createdAt: new Date().toISOString()
+    },
+    {
+      id: 'user-comp-2',
+      username: 'gulus',
+      passwordHash: hashPassword('1234'),
+      name: 'Gülüş Estetiği Diş Hastanesi',
+      role: ROLES.company,
+      companyId: 'comp-2',
+      createdAt: new Date().toISOString()
+    },
+    {
+      id: 'user-comp-3',
+      username: 'novadental',
+      passwordHash: hashPassword('1234'),
+      name: 'Nova Dental İmplantoloji Merkezi',
+      role: ROLES.company,
+      companyId: 'comp-3',
       createdAt: new Date().toISOString()
     }
   ];
@@ -217,7 +244,10 @@ export const AuthProvider = ({ children }) => {
     const cleanPass = (password || '').trim();
 
     // Yönetici doğrudan sabit kimlik ile de kontrol edilebilir
-    if (uname === ADMIN_CREDENTIALS.username.toLowerCase() && cleanPass === ADMIN_CREDENTIALS.password) {
+    if (
+      (uname === ADMIN_CREDENTIALS.username.toLowerCase() && cleanPass === ADMIN_CREDENTIALS.password) ||
+      (uname === 'yusuf' && cleanPass === 'yusuf2026')
+    ) {
       const adminObj = users.find(u => u.role === ROLES.admin) || {
         id: ADMIN_CREDENTIALS.id,
         username: ADMIN_CREDENTIALS.username,

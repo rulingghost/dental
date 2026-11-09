@@ -21,8 +21,8 @@ import {
 
 const DentalContext = createContext(null);
 
-const STORAGE_KEY = 'dentallab_data_clean_v8';
-const DB_CONFIG_KEY = 'dentallab_database_config_v2';
+const STORAGE_KEY = 'dentallab_demo_data_v1';
+const DB_CONFIG_KEY = 'dentallab_demo_db_config_v1';
 
 export function idsMatch(a, b) {
   if (a == null || b == null) return false;
@@ -490,39 +490,367 @@ export function sanitizeTechnicians(list) {
   return filtered;
 }
 
-// TEMİZ BAŞLANGIÇ: ÖRNEK VERİLER TAMAMEN KALDIRILDI!
-const EMPTY_INITIAL_DATA = {
-  companies: [],
-  doctors: [],
-  patients: [],
-  orders: []
-};
+function relativeDateStr(daysOffset = 0) {
+  const d = new Date();
+  d.setDate(d.getDate() + daysOffset);
+  return d.toISOString().split('T')[0];
+}
+
+function buildStepsFromTemplate(templateSteps, currentIdx, status = 'in_progress') {
+  const isCompleted = status === 'completed';
+  const isPending = status === 'pending_approval';
+  return (templateSteps || []).map((s, idx) => ({
+    order: s.order || idx + 1,
+    name: s.name,
+    description: s.description,
+    technician: 'Yusuf Usta',
+    notes: idx < currentIdx ? 'Kontrol edildi, tamamlandı.' : '',
+    status: isCompleted || (!isPending && idx < currentIdx)
+      ? 'completed'
+      : (idx === currentIdx ? 'in_progress' : 'pending'),
+    startedAt: idx === currentIdx ? relativeDateStr(-1) : null,
+    completedAt: (isCompleted || (!isPending && idx < currentIdx)) ? relativeDateStr(-2) : null,
+    completedDate: (isCompleted || (!isPending && idx < currentIdx)) ? relativeDateStr(-2) : null
+  }));
+}
+
+function buildDemoInitialData(materialsMap = DEFAULT_MATERIALS) {
+  const otherSteps = (materialsMap.mdp || DEFAULT_MATERIALS.mdp).steps;
+  const implantSteps = (materialsMap.implant || DEFAULT_MATERIALS.implant).steps;
+
+  return {
+    companies: [
+      {
+        id: 'comp-1',
+        name: 'DentArt Ağız ve Diş Sağlığı Polikliniği',
+        contactPerson: 'Merve Hanım (Klinik Koordinatörü)',
+        phone: '+90 (212) 555 10 20',
+        email: 'info@dentartklinik.com',
+        address: 'Levent Mah. Çamlık Cad. No:14 Beşiktaş / İstanbul',
+        balance: 42500,
+        createdAt: relativeDateStr(-45)
+      },
+      {
+        id: 'comp-2',
+        name: 'Gülüş Estetiği Diş Hastanesi',
+        contactPerson: 'Dr. Cem Karahan (Başhekim Yrd.)',
+        phone: '+90 (216) 444 33 22',
+        email: 'laboratuvar@gulusestetigi.com',
+        address: 'Bağdat Cad. No:204 Kadıköy / İstanbul',
+        balance: 68200,
+        createdAt: relativeDateStr(-30)
+      },
+      {
+        id: 'comp-3',
+        name: 'Nova Dental İmplantoloji Merkezi',
+        contactPerson: 'Canan Güneş',
+        phone: '+90 (312) 222 78 90',
+        email: 'siparis@novadental.com',
+        address: 'Tunalı Hilmi Cad. No:88 Çankaya / Ankara',
+        balance: 24900,
+        createdAt: relativeDateStr(-20)
+      },
+      {
+        id: 'comp-4',
+        name: 'Acıbadem Modern Diş Kliniği',
+        contactPerson: 'Selim Aydın',
+        phone: '+90 (216) 390 45 10',
+        email: 'iletisim@moderndisklinigi.com',
+        address: 'Acıbadem Cad. No:62 Üsküdar / İstanbul',
+        balance: 19400,
+        createdAt: relativeDateStr(-12)
+      }
+    ],
+    doctors: [
+      {
+        id: 'doc-1',
+        companyId: 'comp-1',
+        name: 'Dr. Dt. Mehmet Yılmaz',
+        specialty: 'Protetik Diş Tedavisi Uzmanı',
+        phone: '+90 (532) 111 22 33',
+        email: 'mehmet.yilmaz@dentartklinik.com'
+      },
+      {
+        id: 'doc-2',
+        companyId: 'comp-1',
+        name: 'Dt. Zeynep Çelik',
+        specialty: 'Estetik Diş Hekimliği & Gülüş Tasarımı',
+        phone: '+90 (533) 444 55 66',
+        email: 'zeynep.celik@dentartklinik.com'
+      },
+      {
+        id: 'doc-3',
+        companyId: 'comp-2',
+        name: 'Dr. Dt. Ayşe Kaya',
+        specialty: 'Ağız, Diş ve Çene Cerrahisi',
+        phone: '+90 (535) 777 88 99',
+        email: 'ayse.kaya@gulusestetigi.com'
+      },
+      {
+        id: 'doc-4',
+        companyId: 'comp-2',
+        name: 'Dt. Emre Soylu',
+        specialty: 'Protetik Diş Tedavisi',
+        phone: '+90 (536) 222 44 11',
+        email: 'emre.soylu@gulusestetigi.com'
+      },
+      {
+        id: 'doc-5',
+        companyId: 'comp-3',
+        name: 'Dr. Dt. Kerem Demir',
+        specialty: 'İmplantoloji ve Dijital Diş Hekimliği',
+        phone: '+90 (542) 333 66 11',
+        email: 'kerem.demir@novadental.com'
+      },
+      {
+        id: 'doc-6',
+        companyId: 'comp-4',
+        name: 'Dt. Elif Arslan',
+        specialty: 'Ortodonti & Estetik Protez',
+        phone: '+90 (544) 888 12 34',
+        email: 'elif.arslan@moderndisklinigi.com'
+      }
+    ],
+    patients: [
+      {
+        id: 'pat-1',
+        doctorId: 'doc-1',
+        companyId: 'comp-1',
+        name: 'Burak Korkmaz',
+        chartNumber: 'PRT-9041',
+        age: 38,
+        gender: 'Erkek',
+        notes: 'Bruksizm (diş sıkma) mevcut, oklüzal temaslar dengeli bırakılmalı.'
+      },
+      {
+        id: 'pat-2',
+        doctorId: 'doc-2',
+        companyId: 'comp-1',
+        name: 'Selin Öztürk',
+        chartNumber: 'PRT-9042',
+        age: 29,
+        gender: 'Kadın',
+        notes: 'Gülüş hattı yüksek, kesici kenarlarda doğal şeffaflık ve mamelon efekti isteniyor.'
+      },
+      {
+        id: 'pat-3',
+        doctorId: 'doc-3',
+        companyId: 'comp-2',
+        name: 'Ahmet Karaca',
+        chartNumber: 'PRT-8820',
+        age: 54,
+        gender: 'Erkek',
+        notes: 'Sağ alt bölge implant üstü vidalı hibrit protez çalışması.'
+      },
+      {
+        id: 'pat-4',
+        doctorId: 'doc-5',
+        companyId: 'comp-3',
+        name: 'Fatma Aydın',
+        chartNumber: 'PRT-7711',
+        age: 46,
+        gender: 'Kadın',
+        notes: 'Üst ön bölge 6 üye E-Max Lamina Veneer gülüş tasarımı.'
+      },
+      {
+        id: 'pat-5',
+        doctorId: 'doc-4',
+        companyId: 'comp-2',
+        name: 'Hakan Çetin',
+        chartNumber: 'PRT-8854',
+        age: 41,
+        gender: 'Erkek',
+        notes: 'Sol üst arka bölge 3 üye MDP köprü restorasyonu.'
+      },
+      {
+        id: 'pat-6',
+        doctorId: 'doc-6',
+        companyId: 'comp-4',
+        name: 'Deniz Yalçın',
+        chartNumber: 'PRT-6510',
+        age: 31,
+        gender: 'Kadın',
+        notes: 'Monolitik Zirkonyum estetik ön bölge kronlar.'
+      },
+      {
+        id: 'pat-7',
+        doctorId: 'doc-1',
+        companyId: 'comp-1',
+        name: 'Mustafa Erdem',
+        chartNumber: 'PRT-9088',
+        age: 61,
+        gender: 'Erkek',
+        notes: 'Çift taraflı implant üstü bar ve altyapı provası.'
+      }
+    ],
+    orders: [
+      {
+        id: 'ORD-2026-001',
+        companyId: 'comp-1',
+        doctorId: 'doc-2',
+        patientId: 'pat-2',
+        materialId: 'zirconia',
+        teeth: ['11', '12', '21', '22'],
+        shade: 'BL2 (Bleach)',
+        priority: 'vip',
+        status: 'in_progress',
+        createdBy: 'user-admin',
+        orderDate: relativeDateStr(-4),
+        trialDate: relativeDateStr(-1),
+        deliveryDate: relativeDateStr(0),
+        price: 14500,
+        notes: 'VIP hasta, bugün saat 16:00 kurye ile kliniğe sevk edilecek. İnsizal şeffaflık yüksek.',
+        currentStepIndex: 4,
+        steps: buildStepsFromTemplate(otherSteps, 4, 'in_progress')
+      },
+      {
+        id: 'ORD-2026-002',
+        companyId: 'comp-1',
+        doctorId: 'doc-1',
+        patientId: 'pat-1',
+        materialId: 'mdp',
+        teeth: ['14', '15', '16'],
+        shade: 'A2',
+        priority: 'urgent',
+        status: 'in_progress',
+        createdBy: 'user-operator',
+        orderDate: relativeDateStr(-3),
+        trialDate: relativeDateStr(0),
+        deliveryDate: relativeDateStr(2),
+        price: 9200,
+        notes: '16 numaralı dişte oklüzal temas hafif bırakılsın. Gece plağı uyumlu.',
+        currentStepIndex: 2,
+        steps: buildStepsFromTemplate(otherSteps, 2, 'in_progress')
+      },
+      {
+        id: 'ORD-2026-003',
+        companyId: 'comp-2',
+        doctorId: 'doc-3',
+        patientId: 'pat-3',
+        materialId: 'implant',
+        teeth: ['45', '46', '47'],
+        shade: 'A3',
+        priority: 'urgent',
+        status: 'in_progress',
+        createdBy: 'user-admin',
+        orderDate: relativeDateStr(-5),
+        trialDate: relativeDateStr(0),
+        deliveryDate: relativeDateStr(1),
+        price: 18500,
+        notes: 'Straumann multi-unit abutment kullanılacak. Vida delikleri oklüzal merkezde.',
+        currentStepIndex: 5,
+        steps: buildStepsFromTemplate(implantSteps, 5, 'in_progress')
+      },
+      {
+        id: 'ORD-2026-004',
+        companyId: 'comp-3',
+        doctorId: 'doc-5',
+        patientId: 'pat-4',
+        materialId: 'lamina',
+        teeth: ['13', '12', '11', '21', '22', '23'],
+        shade: 'BL1 (Bleach)',
+        priority: 'vip',
+        status: 'in_progress',
+        createdBy: 'user-admin',
+        orderDate: relativeDateStr(-2),
+        trialDate: relativeDateStr(1),
+        deliveryDate: relativeDateStr(3),
+        price: 24000,
+        notes: '0.3mm minimal preperasyonlu lamina. Yüzey tekstürü doğal mine yapısında.',
+        currentStepIndex: 3,
+        steps: buildStepsFromTemplate(otherSteps, 3, 'in_progress')
+      },
+      {
+        id: 'ORD-2026-005',
+        companyId: 'comp-2',
+        doctorId: 'doc-4',
+        patientId: 'pat-5',
+        materialId: 'mdp',
+        teeth: ['24', '25', '26'],
+        shade: 'A3.5',
+        priority: 'normal',
+        status: 'in_progress',
+        createdBy: 'user-operator',
+        orderDate: relativeDateStr(-1),
+        trialDate: relativeDateStr(2),
+        deliveryDate: relativeDateStr(4),
+        price: 8400,
+        notes: 'Kole uyumu dijital tarama ile doğrulandı.',
+        currentStepIndex: 1,
+        steps: buildStepsFromTemplate(otherSteps, 1, 'in_progress')
+      },
+      {
+        id: 'ORD-2026-006',
+        companyId: 'comp-1',
+        doctorId: 'doc-1',
+        patientId: 'pat-7',
+        materialId: 'implant',
+        teeth: ['35', '36'],
+        shade: 'A2',
+        priority: 'normal',
+        status: 'in_progress',
+        createdBy: 'user-admin',
+        orderDate: relativeDateStr(-3),
+        trialDate: relativeDateStr(1),
+        deliveryDate: relativeDateStr(3),
+        price: 13800,
+        notes: 'Ti-Base üzerine zirkonyum hibrit abutment frezeleniyor.',
+        currentStepIndex: 2,
+        steps: buildStepsFromTemplate(implantSteps, 2, 'in_progress')
+      },
+      {
+        id: 'ORD-2026-007',
+        companyId: 'comp-4',
+        doctorId: 'doc-6',
+        patientId: 'pat-6',
+        materialId: 'zirconia',
+        teeth: ['12', '11', '21', '22'],
+        shade: 'B1',
+        priority: 'urgent',
+        status: 'pending_approval',
+        createdBy: 'user-operator',
+        orderDate: relativeDateStr(0),
+        trialDate: relativeDateStr(2),
+        deliveryDate: relativeDateStr(4),
+        price: 15200,
+        notes: 'Klinikten yeni dijital ölçü (STL) gönderildi, yönetici onayı bekliyor.',
+        currentStepIndex: 0,
+        steps: buildStepsFromTemplate(otherSteps, 0, 'pending_approval')
+      },
+      {
+        id: 'ORD-2026-008',
+        companyId: 'comp-1',
+        doctorId: 'doc-2',
+        patientId: 'pat-2',
+        materialId: 'lamina',
+        teeth: ['14', '24'],
+        shade: 'BL2 (Bleach)',
+        priority: 'normal',
+        status: 'completed',
+        createdBy: 'user-admin',
+        orderDate: relativeDateStr(-10),
+        trialDate: relativeDateStr(-7),
+        deliveryDate: relativeDateStr(-5),
+        price: 8500,
+        notes: 'Glaze tamamlandı ve kliniğe eksiksiz teslim edildi.',
+        currentStepIndex: otherSteps.length - 1,
+        steps: buildStepsFromTemplate(otherSteps, otherSteps.length - 1, 'completed')
+      }
+    ]
+  };
+}
+
+const EMPTY_INITIAL_DATA = buildDemoInitialData();
 
 export const DentalProvider = ({ children }) => {
   const { currentUser, isCompany, isOperator, clearAdminRecovery, applyRemoteUsers } = useAuth();
-  // Eski tüm mock önbellek anahtarlarını sil
-  useEffect(() => {
-    try {
-      const oldKeys = [
-        'dental_lab_pro_react_db_v2',
-        'dental_lab_pro_db_v1',
-        'dentallab_cloud_cache_v1',
-        'dentallab_cloud_cache_v2',
-        'dentallab_cloud_cache_v3',
-        'dentallab_clean_db_v4',
-        'dentallab_clean_db_v5'
-      ];
-      oldKeys.forEach(k => localStorage.removeItem(k));
-    } catch (e) {}
-  }, []);
 
   const [data, setData] = useState(() => {
     try {
-      const saved = localStorage.getItem(STORAGE_KEY) || localStorage.getItem('dentallab_data_clean_v7');
+      const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
-        const isOldMock = parsed?.companies?.some(c => c.name?.includes('Dentİstanbul'));
-        if (parsed && Array.isArray(parsed.orders) && !isOldMock) {
+        if (parsed && Array.isArray(parsed.orders) && parsed.orders.length > 0) {
           const storedMats = loadStoredPipelineSystem().materials;
           const migrated = migrateOrdersToCurrentPipeline(parsed.orders, storedMats);
           return {
@@ -534,7 +862,11 @@ export const DentalProvider = ({ children }) => {
     } catch (e) {
       console.error('Veri okuma hatası:', e);
     }
-    return EMPTY_INITIAL_DATA;
+    const demoData = buildDemoInitialData(loadStoredPipelineSystem().materials);
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(demoData));
+    } catch (e) {}
+    return demoData;
   });
 
   // Veritabanı Yapılandırması (Supabase / Vercel Postgres)
@@ -614,148 +946,15 @@ export const DentalProvider = ({ children }) => {
     return hydrated.materials;
   };
 
-  // Veritabanına Otomatik Kaydetme
-  const persistToDatabase = useCallback(async (dataToPersist) => {
-    setIsDbLoading(true);
-    try {
-      // Supabase doğrudan tablo bazında (saveOrderToSupabase vb.) kaydedilir.
-      // Opsiyonel /api/db endpointi varsa yedek olarak gönderilir
-      if (dbConfig.apiUrl && dbConfig.apiUrl !== '/api/db') {
-        await fetch(dbConfig.apiUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(dataToPersist)
-        }).catch(() => {});
-      }
-      setDbStatus('connected');
-    } catch (e) {
-      setDbStatus('connected');
-    } finally {
-      setIsDbLoading(false);
-    }
-  }, [dbConfig]);
+  // Demo Modu: Veritabanı senkronizasyonu devre dışı (Tamamen yerel hafıza)
+  const persistToDatabase = useCallback(async () => {
+    setDbStatus('connected');
+  }, []);
 
-  // Veritabanından Verileri Çekme (Arka plan sessiz veya ilk yükleme)
-  const fetchFromDatabase = useCallback(async (isBackground = false) => {
-    if (!isBackground) setIsDbLoading(true);
-    setIsSyncing(true);
-
-    try {
-      // 1. Supabase PostgreSQL Veritabanı
-      const remote = await fetchAllFromSupabase();
-      if (remote) {
-        let liveMats = materialsRef.current;
-        if (remote.customMaterials && typeof remote.customMaterials === 'object' && Object.keys(remote.customMaterials).length > 0) {
-          const { mats, types } = splitMaterialsBlob(remote.customMaterials);
-          liveMats = applyHydratedPipeline(mats, types);
-        }
-        const migratedRemote = migrateOrdersToCurrentPipeline(remote.orders || [], liveMats);
-        const { kept, dropped } = dropOrphanMaterialOrders(migratedRemote, liveMats);
-        dropped.forEach(o => deleteOrderFromSupabase(o.id));
-        setData(prev => {
-          const next = {
-            companies: remote.companies || [],
-            doctors: remote.doctors || [],
-            patients: remote.patients || [],
-            orders: kept
-          };
-
-          // Eğer veri aynıysa gereksiz state güncellemesi yapma (flicker ve gereksiz re-render engellenir)
-          if (
-            prev &&
-            prev.orders?.length === next.orders.length &&
-            prev.companies?.length === next.companies.length &&
-            prev.doctors?.length === next.doctors.length &&
-            prev.patients?.length === next.patients.length &&
-            JSON.stringify(prev) === JSON.stringify(next)
-          ) {
-            return prev;
-          }
-
-          try {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-          } catch (e) {}
-          return next;
-        });
-
-        // Teknisyenleri buluttan gelenle eşitle (Sadece Yusuf Usta)
-        if (Array.isArray(remote.technicians)) {
-          setTechniciansList(prev => {
-            const sanitized = sanitizeTechnicians(remote.technicians);
-            if (JSON.stringify(prev) === JSON.stringify(sanitized)) return prev;
-            try {
-              localStorage.setItem(TECHNICIANS_STORAGE_KEY, JSON.stringify(sanitized));
-            } catch (e) {}
-            return sanitized;
-          });
-        }
-
-        // Firma hesaplarını / kullanıcıları eşitle
-        if (Array.isArray(remote.users) && remote.users.length > 0 && typeof applyRemoteUsers === 'function') {
-          applyRemoteUsers(remote.users);
-        }
-
-        setLastSyncedAt(new Date());
-        setDbStatus('connected');
-        return;
-      }
-
-      // 2. /api/db endpointi (Vercel Serverless / Yedek)
-      const res = await fetch(dbConfig.apiUrl || '/api/db');
-      if (res.ok) {
-        const result = await res.json();
-        if (result && result.data && Array.isArray(result.data.orders)) {
-          const isMock = result.data.companies?.some(c => c.name?.includes('Dentİstanbul'));
-          if (!isMock) {
-            const migratedOrders = migrateOrdersToCurrentPipeline(result.data.orders, materialsRef.current);
-            const { kept, dropped } = dropOrphanMaterialOrders(migratedOrders, materialsRef.current);
-            dropped.forEach(o => deleteOrderFromSupabase(o.id));
-            const migrated = {
-              ...result.data,
-              orders: kept
-            };
-            setData(migrated);
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(migrated));
-          }
-          setDbStatus('connected');
-        }
-      }
-    } catch (e) {
-      setDbStatus('connected');
-    } finally {
-      if (!isBackground) setIsDbLoading(false);
-      setIsSyncing(false);
-    }
-  }, [dbConfig, applyRemoteUsers]);
-
-  // İlk açılışta ve canlı arka plan periyodunda sürekli eşitle (Tüm cihazlar anlık senkron)
-  useEffect(() => {
-    // 1. Sayfa ilk açıldığında anında çek
-    fetchFromDatabase(false);
-
-    // 2. CANLI SENKRONİZASYON: Sekme görünürken her 2.5 saniyede bir sessiz kontrol
-    const intervalId = setInterval(() => {
-      if (document.visibilityState === 'visible') {
-        fetchFromDatabase(true);
-      }
-    }, 2500);
-
-    // 3. Kullanıcı pencereye döndüğünde beklemeden anında eşitle
-    const handleFocusOrVisible = () => {
-      if (document.visibilityState === 'visible') {
-        fetchFromDatabase(true);
-      }
-    };
-
-    window.addEventListener('focus', handleFocusOrVisible);
-    document.addEventListener('visibilitychange', handleFocusOrVisible);
-
-    return () => {
-      clearInterval(intervalId);
-      window.removeEventListener('focus', handleFocusOrVisible);
-      document.removeEventListener('visibilitychange', handleFocusOrVisible);
-    };
-  }, [fetchFromDatabase]);
+  const fetchFromDatabase = useCallback(async () => {
+    setLastSyncedAt(new Date());
+    setDbStatus('connected');
+  }, []);
 
   // Veri değiştiğinde hem yerel belleğe yaz hem veritabanına kaydet
   useEffect(() => {
